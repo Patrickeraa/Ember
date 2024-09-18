@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package dist_data;
+
+message TrainLoaderRequest {
+    int32 num_replicas = 1;
+    int32 rank = 2;
+    int32 batch_size = 3;
+}
+
+message TrainLoaderResponse {
+    bytes data = 1;
+}
+
+message Empty {}
+
+service TrainLoaderService {
+    rpc GetTrainLoader(TrainLoaderRequest) returns (TrainLoaderResponse);
+    rpc GetTestLoader(Empty) returns (TrainLoaderResponse);
+}

@@ -1,0 +1,59 @@
+version: '3'
+services:
+  grworker1:
+    build: ./worker
+    container_name: grworker1
+    environment:
+      - RANK=0
+      - WORLD_SIZE=2
+      - MASTER_ADDR=grworker1
+      - MASTER_PORT=8888
+      - NCCL_DEBUG=INFO
+      - API_HOST=grserver
+      - API_PORT=8040
+    tty: true  
+    stdin_open: true
+    networks:
+      - mynetwork
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  grworker2:
+    build: ./worker
+    container_name: grworker2
+    environment:
+      - RANK=1
+      - WORLD_SIZE=2
+      - MASTER_ADDR=grworker1
+      - MASTER_PORT=8888
+      - NCCL_DEBUG=INFO
+      - API_HOST=grserver
+      - API_PORT=8040
+    tty: true
+    stdin_open: true
+    networks:
+      - mynetwork
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  grserver:
+    build: ./server
+    container_name: grserver
+    ports:
+      - "8040:8040"
+    networks:
+      - mynetwork
+      
+networks:
+  mynetwork:
+    driver: bridge
