@@ -13,7 +13,7 @@ import dist_data_pb2_grpc
 class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
     def GetTrainLoader(self, request, context):
         try:
-            dataset = self.get_mnist_data()
+            dataset = self.get_svhn_train()
 
             train_sampler = DistributedSampler(
                 dataset,
@@ -33,7 +33,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
 
     def GetTestLoader(self, request, context):
         try:
-            dataset = self.get_mnist_data(train=False)
+            dataset = self.get_svhn_test()
             buffer = io.BytesIO()
             pickle.dump(dataset, buffer)
             buffer.seek(0)
@@ -45,6 +45,8 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             context.set_details(f"Error: {str(e)}")
             context.set_code(grpc.StatusCode.INTERNAL)
             raise
+
+        
     def GetCifarTrainLoader(self, request, context):
         try:
             dataset = self.get_cifar100_data(train=True)
@@ -86,6 +88,24 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             transforms.Normalize((0.5,), (0.5,))
         ])
         return datasets.MNIST(root='./data', train=train, download=True, transform=transform)
+    
+    def get_svhn_train(self):
+        transform = transforms.Compose([
+                        transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        train_dataset = datasets.SVHN(root='/app/dataset', split='train', download=False, transform=transform)
+
+        return train_dataset
+    
+    def get_svhn_test(self):
+        transform = transforms.Compose([
+                        transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        test_dataset = datasets.SVHN(root='/app/dataset', split='test', download=False, transform=transform)
+
+        return test_dataset
 
     def get_cifar100_data(self, train=True):
         transform = transforms.Compose([

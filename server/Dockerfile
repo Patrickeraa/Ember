@@ -3,4 +3,4 @@ WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir grpcio grpcio-tools torch torchvision
 
-CMD ["tail", "-f", "/dev/null"]
+CMD ["python", "server.py"]

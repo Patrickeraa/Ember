@@ -1,0 +1,100 @@
+#inicia o conjunto de containers para trabalho
+sudo docker-compose up -d 
+
+#entra nos containers para trabalho
+docker exec -it worker1 /bin/bash
+
+scp -i interns.pem -r /home/patrick/CodeDepot/POC paraujo@209.20.156.88:/home/paraujo
+
+python src/mnist-distributed.py -n 2 -g 1 -nr 0
+python src/mnist-distributed.py -n 2 -g 1 -nr 1
+
+
+docker compose up -d 
+
+
+
+
+
+to conect with port foward
+ssh -i interns.pem -L 8010:localhost:8010 paraujo@209.20.156.88
+ssh -i interns.pem -L paraujo@209.20.156.88
+
+to start api
+fastapi dev main.py
+
+
+https://fastapi.tiangolo.com/deployment/docker/
+
+docker run -d --name fastapi -p 8010:8010 api-image
+
+
+testar conexao
+curl http://localhost:8010
+
+to ping:
+curl http://api:8010
+
+to download data:
+curl http://api:8010/dataset --output dataset.pkl
+
+
+scp -i interns.pem -r /home/patrick/CodeDepot/POC/v4 paraujo@209.20.156.88:/home/paraujo/POC
+
+
+run on 1 machine:
+python src/dist.py -n 2 -g 1 -nr 0 --epochs 30
+python src/dist.py -n 2 -g 1 -nr 0
+
+to build the images:
+docker build -t fastapi .
+docker build -t workers .
+
+docker exec -it worker2 /bin/bash
+
+
+docker cp /home/paraujo/POC/v4/workers/src worker2:/woskpace
+
+
+on single mnist
+python src/off.py -n 1 -g 1 -nr 0 --epochs 30
+python src/single.py -n 1 -g 1 -nr 0 --epochs 30
+
+
+docker build -t fastapi:latest .
+
+
+
+scp -i interns.pem -r /home/patrick/CodeDepot/POC/GRPC paraujo@209.20.158.4:/home/paraujo
+
+
+
+
+
+GRPC AREA
+
+python -m grpc_tools.protoc -I=. --python_out=. --grpc_python_out=. ./dist_data.proto
+python dist_test.py -n 2 -g 1 -nr 0
+
+
+docker cp /home/paraujo/POC/GRPC/worker/files/dist.py grworker1:/workspace/files
+
+
+
+docker cp /home/paraujo/GRPC/server/files grserver:/app
+docker cp /home/paraujo/GRPC/worker/files grworker1:/workspace
+
+
+
+--- NEW INTERFACE ---
+python dist.py --config ./config/config1.json
+
+
+
+
+
+makes the older images dangling 
+docker compose up -d --build --force-recreate
+
+prune dangling images
+docker image prune -f

@@ -19,7 +19,6 @@ import io
 import dist_data_pb2
 import dist_data_pb2_grpc
 import dls
-import modelFile
 
 
 def main():
@@ -41,17 +40,12 @@ def train(gpu, args):
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     batch_size = 100
-    
-    # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda(gpu)
     optimizer = torch.optim.SGD(model.parameters(), 1e-4)
-
-    # Wrap the model
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     # Data loading code
     train_loader = dls.fetch_train_loader(api_host="grserver", api_port="8040", num_replicas=args.world_size, rank=rank, batch_size=batch_size)
-
 
     total_step = len(train_loader)
     for epoch in range(args.epochs):
@@ -73,6 +67,8 @@ def train(gpu, args):
         print("Training complete")
     if rank == 0:
         print("Teste gpu 0")
+
+        # Test loading code
         test_loader = dls.fetch_test_loader(api_host="grserver", api_port="8040")
         model.eval()
         

@@ -49,6 +49,8 @@ services:
   grserver:
     build: ./server
     container_name: grserver
+    volumes:
+      - /home/paraujo/GRPC/dataset:/app/dataset
     ports:
       - "8040:8040"
     networks:
