@@ -18,6 +18,7 @@ import json
 class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
     def GetTrainLoader(self, request, context):
         try:
+            dataset = self.get_custom_dataset_debug(train=True)
 
             partitioned_dataset = self.partition_dataset(dataset, request.rank, request.num_replicas)
 
@@ -132,5 +133,4 @@ if __name__ == "__main__":
     # Load the JSON file
     with open(args.config, 'r') as f:
         transform_json = json.load(f)
-        
     serve()
