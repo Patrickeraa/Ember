@@ -34,9 +34,63 @@ def set_ambient(json_file):
 
     return Args(config)
 
+def fetch_solo_loader(api_host, api_port):
+    max_message_length = 1000 * 1024 * 1024
+    channel = grpc.insecure_channel(
+        f'{api_host}:{api_port}', 
+        options=[
+            ('grpc.max_send_message_length', max_message_length),
+            ('grpc.max_receive_message_length', max_message_length)
+        ]
+    )
+    
+    stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
+    request = dist_data_pb2.Empty()
+    response = stub.GetSoloLoader(request)
+
+    buffer = io.BytesIO(response.data)
+    dataset = pickle.load(buffer)
+
+    solo_loader = torch.utils.data.DataLoader(
+        dataset=dataset,
+        batch_size=100,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True
+    )
+    
+    return solo_loader
+
+def fetch_solo_test(api_host, api_port):
+    max_message_length = 1000 * 1024 * 1024
+    channel = grpc.insecure_channel(
+        f'{api_host}:{api_port}', 
+        options=[
+            ('grpc.max_send_message_length', max_message_length),
+            ('grpc.max_receive_message_length', max_message_length)
+        ]
+    )
+    
+    stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
+    request = dist_data_pb2.Empty()
+    response = stub.GetSoloTest(request)
+
+    buffer = io.BytesIO(response.data)
+    dataset = pickle.load(buffer)
+
+    solo_loader = torch.utils.data.DataLoader(
+        dataset=dataset,
+        batch_size=100,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=True
+    )
+    
+    return solo_loader
+
 
 def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
-    max_message_length = 200 * 1024 * 1024  
+    max_message_length = 1000 * 1024 * 1024  
     channel = grpc.insecure_channel(
         f'{api_host}:{api_port}', 
         options=[
@@ -47,6 +101,10 @@ def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
     
     stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
     
+    print("Fetching train loader")
+    print(num_replicas)
+    print(rank)
+    print(batch_size)
     request = dist_data_pb2.TrainLoaderRequest(
         num_replicas=num_replicas,
         rank=rank,
@@ -68,7 +126,7 @@ def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
 
 
 def fetch_test_loader(api_host, api_port):
-    max_message_length = 200 * 1024 * 1024
+    max_message_length = 1000 * 1024 * 1024
     channel = grpc.insecure_channel(
         f'{api_host}:{api_port}', 
         options=[

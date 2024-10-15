@@ -17,4 +17,6 @@ message Empty {}
 service TrainLoaderService {
     rpc GetTrainLoader(TrainLoaderRequest) returns (TrainLoaderResponse);
     rpc GetTestLoader(Empty) returns (TrainLoaderResponse);
+    rpc GetSoloLoader(Empty) returns (TrainLoaderResponse);
+    rpc GetSoloTest(Empty) returns (TrainLoaderResponse);
 }

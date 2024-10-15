@@ -6,20 +6,25 @@ import io
 from torchvision import datasets, transforms
 from torch.utils.data.distributed import DistributedSampler
 import numpy as np
+from torchvision.datasets import ImageFolder
 
 import dist_data_pb2
 import dist_data_pb2_grpc
+import mtg
+import argparse
+import json
 
 class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
     def GetTrainLoader(self, request, context):
         try:
-            dataset = self.get_svhn_train()
+            dataset = self.get_custom_dataset(train=True)
 
             train_sampler = DistributedSampler(
                 dataset,
                 num_replicas=request.num_replicas,
                 rank=request.rank
             )
+            print("VALUES:", request.num_replicas, " ",request.rank, " ",request.batch_size)
             
             buffer = io.BytesIO()
             pickle.dump((dataset, train_sampler, request.batch_size), buffer)
@@ -33,7 +38,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
 
     def GetTestLoader(self, request, context):
         try:
-            dataset = self.get_svhn_test()
+            dataset = self.get_custom_dataset(train=False)
             buffer = io.BytesIO()
             pickle.dump(dataset, buffer)
             buffer.seek(0)
@@ -46,32 +51,9 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             raise
 
-        
-    def GetCifarTrainLoader(self, request, context):
+    def GetSoloLoader(self, request, context):
         try:
-            dataset = self.get_cifar100_data(train=True)
-
-            train_sampler = DistributedSampler(
-                dataset,
-                num_replicas=request.num_replicas,
-                rank=request.rank
-            )
-
-            buffer = io.BytesIO()
-            torch.save((dataset, train_sampler, request.batch_size), buffer)
-            buffer.seek(0)
-            
-            return dist_data_pb2.TrainLoaderResponse(data=buffer.read())
-
-        except Exception as e:
-            context.set_details(f"Error: {str(e)}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            raise
-
-    def GetCifarTestLoader(self, request, context):
-        try:
-            dataset = self.get_cifar100_data(train=False)
-
+            dataset = self.get_custom_dataset(train=True)
             buffer = io.BytesIO()
             pickle.dump(dataset, buffer)
             buffer.seek(0)
@@ -82,43 +64,34 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             raise
 
-    def get_mnist_data(self, train=True):
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
-        ])
-        return datasets.MNIST(root='./data', train=train, download=True, transform=transform)
-    
-    def get_svhn_train(self):
-        transform = transforms.Compose([
-                        transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
-        ])
-        train_dataset = datasets.SVHN(root='/app/dataset', split='train', download=False, transform=transform)
+    def GetSoloTest(self, request, context):
+        try:
+            dataset = self.get_custom_dataset(train=False)
+            buffer = io.BytesIO()
+            pickle.dump(dataset, buffer)
+            buffer.seek(0)
 
-        return train_dataset
-    
-    def get_svhn_test(self):
-        transform = transforms.Compose([
-                        transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
-        ])
-        test_dataset = datasets.SVHN(root='/app/dataset', split='test', download=False, transform=transform)
+            return dist_data_pb2.TrainLoaderResponse(data=buffer.read())
+        except Exception as e:
+            context.set_details(f"Error: {str(e)}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            raise
 
-        return test_dataset
+    def get_custom_dataset(self, train=True):
+        transform = mtg.parse_transform(json.dumps(config_json['transforms']))
 
-    def get_cifar100_data(self, train=True):
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # CIFAR-100 normalization
-        ])
-        return datasets.CIFAR100(root='./data', train=train, download=True, transform=transform)
+        if train:
+            dataset = ImageFolder(root=config_json['dataset_path']['train'], transform=transform)
+        else:
+            dataset = ImageFolder(root=config_json['dataset_path']['test'], transform=transform)
+        
+        return dataset
 
 
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10),
-                         options=[('grpc.max_send_message_length', 500 * 1024 * 1024),
-                                  ('grpc.max_receive_message_length', 500 * 1024 * 1024)])
+                         options=[('grpc.max_send_message_length', 1000 * 1024 * 1024),
+                                  ('grpc.max_receive_message_length', 1000 * 1024 * 1024)])
     dist_data_pb2_grpc.add_TrainLoaderServiceServicer_to_server(TrainLoaderService(), server)
     server.add_insecure_port('[::]:8040')
     server.start()
@@ -127,4 +100,11 @@ def serve():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Load transformation pipeline from JSON")
+    parser.add_argument('--config', type=str, required=True, help="Path to the JSON file with transform definitions")
+    args = parser.parse_args()
+
+    # Load the JSON file
+    with open(args.config, 'r') as f:
+        config_json = json.load(f)
     serve()

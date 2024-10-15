@@ -66,7 +66,7 @@ docker build -t fastapi:latest .
 
 
 scp -i interns.pem -r /home/patrick/CodeDepot/POC/GRPC paraujo@209.20.158.4:/home/paraujo
-
+scp -i interns.pem -r /home/patrick/CodeDepot/POC/archive.zip paraujo@209.20.158.4:/home/paraujo/GRPC/dataset
 
 
 
@@ -74,7 +74,7 @@ scp -i interns.pem -r /home/patrick/CodeDepot/POC/GRPC paraujo@209.20.158.4:/hom
 GRPC AREA
 
 python -m grpc_tools.protoc -I=. --python_out=. --grpc_python_out=. ./dist_data.proto
-python dist_test.py -n 2 -g 1 -nr 0
+python dist.py -n 2 -g 1 -nr 0
 
 
 docker cp /home/paraujo/POC/GRPC/worker/files/dist.py grworker1:/workspace/files
@@ -89,6 +89,11 @@ docker cp /home/paraujo/GRPC/worker/files grworker1:/workspace
 --- NEW INTERFACE ---
 python dist.py --config ./config/config1.json
 
+python test.py --config ./config/config_solo.json
+
+# server side
+python server.py --config ./config/grayscale.json
+
 
 
 
@@ -98,3 +103,6 @@ docker compose up -d --build --force-recreate
 
 prune dangling images
 docker image prune -f
+
+
+

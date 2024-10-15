@@ -44,6 +44,16 @@ class TrainLoaderServiceStub(object):
                 request_serializer=dist__data__pb2.Empty.SerializeToString,
                 response_deserializer=dist__data__pb2.TrainLoaderResponse.FromString,
                 _registered_method=True)
+        self.GetSoloLoader = channel.unary_unary(
+                '/dist_data.TrainLoaderService/GetSoloLoader',
+                request_serializer=dist__data__pb2.Empty.SerializeToString,
+                response_deserializer=dist__data__pb2.TrainLoaderResponse.FromString,
+                _registered_method=True)
+        self.GetSoloTest = channel.unary_unary(
+                '/dist_data.TrainLoaderService/GetSoloTest',
+                request_serializer=dist__data__pb2.Empty.SerializeToString,
+                response_deserializer=dist__data__pb2.TrainLoaderResponse.FromString,
+                _registered_method=True)
 
 
 class TrainLoaderServiceServicer(object):
@@ -61,6 +71,18 @@ class TrainLoaderServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetSoloLoader(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetSoloTest(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TrainLoaderServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -71,6 +93,16 @@ def add_TrainLoaderServiceServicer_to_server(servicer, server):
             ),
             'GetTestLoader': grpc.unary_unary_rpc_method_handler(
                     servicer.GetTestLoader,
+                    request_deserializer=dist__data__pb2.Empty.FromString,
+                    response_serializer=dist__data__pb2.TrainLoaderResponse.SerializeToString,
+            ),
+            'GetSoloLoader': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSoloLoader,
+                    request_deserializer=dist__data__pb2.Empty.FromString,
+                    response_serializer=dist__data__pb2.TrainLoaderResponse.SerializeToString,
+            ),
+            'GetSoloTest': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSoloTest,
                     request_deserializer=dist__data__pb2.Empty.FromString,
                     response_serializer=dist__data__pb2.TrainLoaderResponse.SerializeToString,
             ),
@@ -127,6 +159,60 @@ class TrainLoaderService(object):
             request,
             target,
             '/dist_data.TrainLoaderService/GetTestLoader',
+            dist__data__pb2.Empty.SerializeToString,
+            dist__data__pb2.TrainLoaderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSoloLoader(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/dist_data.TrainLoaderService/GetSoloLoader',
+            dist__data__pb2.Empty.SerializeToString,
+            dist__data__pb2.TrainLoaderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSoloTest(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/dist_data.TrainLoaderService/GetSoloTest',
             dist__data__pb2.Empty.SerializeToString,
             dist__data__pb2.TrainLoaderResponse.FromString,
             options,
