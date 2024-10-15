@@ -18,13 +18,11 @@ import json
 class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
     def GetTrainLoader(self, request, context):
         try:
-            dataset = self.get_custom_dataset_debug(train=True)
 
-            # Partition the dataset for this worker based on rank and num_replicas
             partitioned_dataset = self.partition_dataset(dataset, request.rank, request.num_replicas)
 
             buffer = io.BytesIO()
-            # Send only the partitioned dataset to the worker
+
             pickle.dump(partitioned_dataset, buffer)
             buffer.seek(0)
 
@@ -39,7 +37,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             dataset = self.get_custom_dataset_debug(train=False)
 
             buffer = io.BytesIO()
-            # Send the entire test dataset since we don't partition the test data
+
             pickle.dump(dataset, buffer)
             buffer.seek(0)
 
@@ -99,7 +97,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         dataset_path = "/workspace/dataset/mnist-pngs-main/train" if train else "/workspace/dataset/mnist-pngs-main/test"
 
         dataset = ImageFolder(root=dataset_path, transform=transform)
-        
+        print(f"Total number of samples in the {'train' if train else 'test'} dataset: {len(dataset)}")
         return dataset
     
     def partition_dataset(self, dataset, rank, num_replicas):
@@ -110,6 +108,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         end_idx = start_idx + partition_size if rank != num_replicas - 1 else dataset_size
 
         subset_indices = indices[start_idx:end_idx]
+        print(f"Rank {rank}: Partition size = {len(subset_indices)}, Indices = {start_idx} to {end_idx - 1}")
         partitioned_dataset = Subset(dataset, subset_indices)
         return partitioned_dataset
 
@@ -133,4 +132,5 @@ if __name__ == "__main__":
     # Load the JSON file
     with open(args.config, 'r') as f:
         transform_json = json.load(f)
+        
     serve()

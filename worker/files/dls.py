@@ -90,7 +90,6 @@ def fetch_solo_test(api_host, api_port):
 
 
 def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
-    # Connect to the gRPC server
     max_message_length = 1000 * 1024 * 1024
     channel = grpc.insecure_channel(
         f'{api_host}:{api_port}', 
@@ -100,16 +99,15 @@ def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
         ]
     )
     stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
-
-    # Send request to get partitioned dataset
     request = dist_data_pb2.TrainLoaderRequest(num_replicas=num_replicas, rank=rank)
     response = stub.GetTrainLoader(request)
 
-    # Deserialize the partitioned dataset
     buffer = io.BytesIO(response.data)
     partitioned_dataset = pickle.load(buffer)
 
-    # Create DataLoader for this partition
+    print(f"Received dataset partition for rank {rank}")
+    print(f"Number of samples in received partition: {len(partitioned_dataset)}")
+
     train_loader = torch.utils.data.DataLoader(
         dataset=partitioned_dataset,
         batch_size=batch_size,
