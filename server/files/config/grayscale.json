@@ -1,6 +1,10 @@
 {
   "transforms": [
       {
+          "name": "Grayscale",
+          "args": [1]
+      },
+      {
           "name": "ToTensor",
           "args": []
       },
@@ -10,11 +14,11 @@
       },
       {
           "name": "Resize",
-          "args": [56]
+          "args": [56, 56] 
       }
   ],
   "dataset_path": {
-      "train": "/workspace/dataset/Vegetable_Images/train",
-      "test": "/workspace/dataset/Vegetable_Images/test"
+      "train": "/workspace/dataset/mnist-pngs-main/train",
+      "test": "/workspace/dataset/mnist-pngs-main/test"
   }
 }

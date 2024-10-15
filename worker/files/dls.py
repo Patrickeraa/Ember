@@ -90,7 +90,8 @@ def fetch_solo_test(api_host, api_port):
 
 
 def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
-    max_message_length = 1000 * 1024 * 1024  
+    # Connect to the gRPC server
+    max_message_length = 1000 * 1024 * 1024
     channel = grpc.insecure_channel(
         f'{api_host}:{api_port}', 
         options=[
@@ -98,28 +99,23 @@ def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
             ('grpc.max_receive_message_length', max_message_length)
         ]
     )
-    
     stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
-    
-    print("Fetching train loader")
-    print(num_replicas)
-    print(rank)
-    print(batch_size)
-    request = dist_data_pb2.TrainLoaderRequest(
-        num_replicas=num_replicas,
-        rank=rank,
-        batch_size=batch_size
-    )
 
+    # Send request to get partitioned dataset
+    request = dist_data_pb2.TrainLoaderRequest(num_replicas=num_replicas, rank=rank)
     response = stub.GetTrainLoader(request)
-    buffer = io.BytesIO(response.data)
-    dataset, train_sampler, batch_size = pickle.load(buffer)
 
+    # Deserialize the partitioned dataset
+    buffer = io.BytesIO(response.data)
+    partitioned_dataset = pickle.load(buffer)
+
+    # Create DataLoader for this partition
     train_loader = torch.utils.data.DataLoader(
-        dataset=dataset,
+        dataset=partitioned_dataset,
         batch_size=batch_size,
-        shuffle=False,
-        sampler=train_sampler
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
     )
     
     return train_loader
