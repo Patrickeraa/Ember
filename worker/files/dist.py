@@ -10,7 +10,7 @@ import torch.distributed as dist
 from apex.parallel import DistributedDataParallel as DDP
 from apex import amp
 from sklearn.metrics import precision_score, f1_score
-
+from tqdm import tqdm
 
 import io
 import grpc
@@ -45,19 +45,23 @@ def train(gpu, args):
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     # Data loading code
-    print(args.world_size)
-    print(args.gpus)
-    print(args.nr)
-    print(args.epochs)
-    print(args.nodes)
-    print("-----------------")
+    print("--------- TRAINING STATUS --------")
+    print("World Size: ", args.world_size)
+    print("Number of GPU's: ", args.gpus)
+    print("Machine Rank: ", args.nr)
+    print("Number of Epochs in the Training: ", args.epochs)
+    print("Number of Nodes: ", args.nodes)
+    print("----------------------------------")
     train_loader = dls.fetch_train_loader(api_host="grserver", api_port="8040", num_replicas=args.world_size, rank=rank, batch_size=batch_size)
 
     total_step = len(train_loader)
     for epoch in range(args.epochs):
-        for i, (images, labels) in enumerate(train_loader):
+        dist.barrier() 
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}", leave=False)
+        for i, (images, labels) in enumerate(progress_bar):
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
+
             # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -66,9 +70,9 @@ def train(gpu, args):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if (i + 1) % 100 == 0 and gpu == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, args.epochs, i + 1, total_step,
-                                                                         loss.item()))
+
+            progress_bar.set_description(f"Epoch {epoch + 1}/{args.epochs}, Loss: {loss.item():.4f}")
+
     if gpu == 0:
         print("Training complete")
     if rank == 0:

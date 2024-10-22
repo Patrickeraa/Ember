@@ -105,6 +105,9 @@ def fetch_train_loader(api_host, api_port, num_replicas, rank, batch_size):
     buffer = io.BytesIO(response.data)
     partitioned_dataset = pickle.load(buffer)
 
+    classes = partitioned_dataset.dataset.classes
+    print(f"Classes: {classes}, Number of classes: {len(classes)}")
+
     print(f"Received dataset partition for rank {rank}")
     print(f"Number of samples in received partition: {len(partitioned_dataset)}")
 

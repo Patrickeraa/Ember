@@ -4,6 +4,7 @@ import pickle
 import io
 import grpc
 from torchvision.datasets import ImageFolder
+from torch.utils.data import Subset
 
 def parse_transform(transform_config):
     print('Applying transformations...')
@@ -25,3 +26,16 @@ def parse_transform(transform_config):
 
     print(transform_list)
     return transforms.Compose(transform_list)
+
+def partition_dataset(dataset, rank, num_replicas):
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        partition_size = dataset_size // num_replicas
+        start_idx = rank * partition_size
+        end_idx = start_idx + partition_size if rank != num_replicas - 1 else dataset_size
+
+        subset_indices = indices[start_idx:end_idx]
+        print(f"Rank {rank}: Partition size = {len(subset_indices)}, Indices = {start_idx} to {end_idx - 1}")
+        partitioned_dataset = Subset(dataset, subset_indices)
+        return partitioned_dataset
+        

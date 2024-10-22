@@ -24,19 +24,11 @@ class ConvNet(nn.Module):
         out = self.fc(out)
         return out
 
-
-
 class PretrainedModel(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=15):
         super(PretrainedModel, self).__init__()
-
-        # Load a pretrained ResNet model
         self.resnet = models.resnet18(pretrained=True)
-
-        # Modify the first convolution layer to accept 1 channel instead of 3
         self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-
-        # Replace the final fully connected layer with one for your number of classes
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_classes)
 
     def forward(self, x):

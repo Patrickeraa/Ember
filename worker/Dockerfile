@@ -4,7 +4,7 @@ WORKDIR /workspace
 
 COPY files /workspace/files
 
-RUN pip install --no-cache-dir grpcio grpcio-tools protobuf==5.27.2 torch torchvision scipy
+RUN pip install --no-cache-dir grpcio grpcio-tools protobuf==5.27.2 torch torchvision scipy tqdm
 
 
 CMD ["tail", "-f", "/dev/null"]
