@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x64ist_data.proto\x12\tdist_data\"8\n\x12TrainLoaderRequest\x12\x14\n\x0cnum_replicas\x18\x01 \x01(\x05\x12\x0c\n\x04rank\x18\x02 \x01(\x05\"#\n\x13TrainLoaderResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\"\x07\n\x05\x45mpty2\xac\x02\n\x12TrainLoaderService\x12O\n\x0eGetTrainLoader\x12\x1d.dist_data.TrainLoaderRequest\x1a\x1e.dist_data.TrainLoaderResponse\x12\x41\n\rGetTestLoader\x12\x10.dist_data.Empty\x1a\x1e.dist_data.TrainLoaderResponse\x12\x41\n\rGetSoloLoader\x12\x10.dist_data.Empty\x1a\x1e.dist_data.TrainLoaderResponse\x12?\n\x0bGetSoloTest\x12\x10.dist_data.Empty\x1a\x1e.dist_data.TrainLoaderResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0f\x64ist_data.proto\x12\tdist_data\"8\n\x12TrainLoaderRequest\x12\x14\n\x0cnum_replicas\x18\x01 \x01(\x05\x12\x0c\n\x04rank\x18\x02 \x01(\x05\"Y\n\x0c\x42\x61tchRequest\x12\x14\n\x0cnum_replicas\x18\x01 \x01(\x05\x12\x0c\n\x04rank\x18\x02 \x01(\x05\x12\x11\n\tbatch_idx\x18\x03 \x01(\x05\x12\x12\n\nbatch_size\x18\x04 \x01(\x05\"\x07\n\x05\x45mpty\"#\n\x13TrainLoaderResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x32\xf1\x02\n\x12TrainLoaderService\x12O\n\x0eGetTrainLoader\x12\x1d.dist_data.TrainLoaderRequest\x1a\x1e.dist_data.TrainLoaderResponse\x12\x41\n\rGetTestLoader\x12\x10.dist_data.Empty\x1a\x1e.dist_data.TrainLoaderResponse\x12\x41\n\rGetSoloLoader\x12\x10.dist_data.Empty\x1a\x1e.dist_data.TrainLoaderResponse\x12?\n\x0bGetSoloTest\x12\x10.dist_data.Empty\x1a\x1e.dist_data.TrainLoaderResponse\x12\x43\n\x08GetBatch\x12\x17.dist_data.BatchRequest\x1a\x1e.dist_data.TrainLoaderResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,10 +33,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_TRAINLOADERREQUEST']._serialized_start=30
   _globals['_TRAINLOADERREQUEST']._serialized_end=86
-  _globals['_TRAINLOADERRESPONSE']._serialized_start=88
-  _globals['_TRAINLOADERRESPONSE']._serialized_end=123
-  _globals['_EMPTY']._serialized_start=125
-  _globals['_EMPTY']._serialized_end=132
-  _globals['_TRAINLOADERSERVICE']._serialized_start=135
-  _globals['_TRAINLOADERSERVICE']._serialized_end=435
+  _globals['_BATCHREQUEST']._serialized_start=88
+  _globals['_BATCHREQUEST']._serialized_end=177
+  _globals['_EMPTY']._serialized_start=179
+  _globals['_EMPTY']._serialized_end=186
+  _globals['_TRAINLOADERRESPONSE']._serialized_start=188
+  _globals['_TRAINLOADERRESPONSE']._serialized_end=223
+  _globals['_TRAINLOADERSERVICE']._serialized_start=226
+  _globals['_TRAINLOADERSERVICE']._serialized_end=595
 # @@protoc_insertion_point(module_scope)

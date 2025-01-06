@@ -1,0 +1,11 @@
+ASYNC
+Test Accuracy of the model on the test images: 96.89 %
+Test Loss: 0.1112
+Test Precision: 0.9689
+Test F1 Score: 0.9689
+
+SYNC
+Test Accuracy of the model on the test images: 97.14 %
+Test Loss: 0.1017
+Test Precision: 0.9714
+Test F1 Score: 0.9714

@@ -26,7 +26,8 @@ if _version_not_supported:
 
 
 class TrainLoaderServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """New service definition to get batches
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -54,10 +55,16 @@ class TrainLoaderServiceStub(object):
                 request_serializer=dist__data__pb2.Empty.SerializeToString,
                 response_deserializer=dist__data__pb2.TrainLoaderResponse.FromString,
                 _registered_method=True)
+        self.GetBatch = channel.unary_unary(
+                '/dist_data.TrainLoaderService/GetBatch',
+                request_serializer=dist__data__pb2.BatchRequest.SerializeToString,
+                response_deserializer=dist__data__pb2.TrainLoaderResponse.FromString,
+                _registered_method=True)
 
 
 class TrainLoaderServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """New service definition to get batches
+    """
 
     def GetTrainLoader(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -79,6 +86,14 @@ class TrainLoaderServiceServicer(object):
 
     def GetSoloTest(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetBatch(self, request, context):
+        """New RPC method for batch-wise loading
+        New for requesting batches
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -106,6 +121,11 @@ def add_TrainLoaderServiceServicer_to_server(servicer, server):
                     request_deserializer=dist__data__pb2.Empty.FromString,
                     response_serializer=dist__data__pb2.TrainLoaderResponse.SerializeToString,
             ),
+            'GetBatch': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBatch,
+                    request_deserializer=dist__data__pb2.BatchRequest.FromString,
+                    response_serializer=dist__data__pb2.TrainLoaderResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'dist_data.TrainLoaderService', rpc_method_handlers)
@@ -115,7 +135,8 @@ def add_TrainLoaderServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class TrainLoaderService(object):
-    """Missing associated documentation comment in .proto file."""
+    """New service definition to get batches
+    """
 
     @staticmethod
     def GetTrainLoader(request,
@@ -214,6 +235,33 @@ class TrainLoaderService(object):
             target,
             '/dist_data.TrainLoaderService/GetSoloTest',
             dist__data__pb2.Empty.SerializeToString,
+            dist__data__pb2.TrainLoaderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetBatch(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/dist_data.TrainLoaderService/GetBatch',
+            dist__data__pb2.BatchRequest.SerializeToString,
             dist__data__pb2.TrainLoaderResponse.FromString,
             options,
             channel_credentials,

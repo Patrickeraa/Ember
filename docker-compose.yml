@@ -3,8 +3,6 @@ services:
   grworker1:
     build: ./worker
     container_name: grworker1
-    volumes:
-      - /home/paraujo/GRPC/dataset:/workspace/dataset
     environment:
       - RANK=0
       - WORLD_SIZE=2
@@ -28,8 +26,6 @@ services:
   grworker2:
     build: ./worker
     container_name: grworker2
-    volumes:
-      - /home/paraujo/GRPC/dataset:/workspace/dataset
     environment:
       - RANK=1
       - WORLD_SIZE=2
@@ -58,7 +54,7 @@ services:
       - NUM_CLASSES = 10
     container_name: grserver
     volumes:
-      - /home/paraujo/GRPC/dataset:/workspace/dataset
+      - /home/paraujo/POC/dataset:/workspace/dataset
     ports:
       - "8040:8040"
     networks:

@@ -13,8 +13,8 @@
           "args": [[0.5], [0.5]]
       },
       {
-          "name": "Resize",
-          "args": [56, 56] 
+            "name": "Resize",
+            "args": [28]
       }
   ],
   "dataset_path": {

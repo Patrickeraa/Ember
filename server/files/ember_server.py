@@ -22,7 +22,12 @@ def parse_transform(transform_config):
             transform_list.append(transforms.Normalize(mean=t['args'][0], std=t['args'][1]))
         elif t['name'] == 'Resize':
             print('Resize')
-            transform_list.append(transforms.Resize(size=t['args'][0]))
+            size = t['args']
+            if len(size) == 1:
+                size = size[0]
+            elif len(size) == 2:
+                size = tuple(size)
+            transform_list.append(transforms.Resize(size))
 
     print(transform_list)
     return transforms.Compose(transform_list)

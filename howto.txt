@@ -69,6 +69,7 @@ scp -i interns.pem -r /home/patrick/CodeDepot/POC/GRPC paraujo@209.20.158.4:/hom
 scp -i interns.pem -r /home/patrick/CodeDepot/POC/archive.zip paraujo@209.20.158.4:/home/paraujo/GRPC/dataset
 
 
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/POC/worker/gpu_utilization.csv /home/patrick/CodeDepot/POC/GRPC
 
 
 GRPC AREA
@@ -87,13 +88,18 @@ docker cp /home/paraujo/GRPC/worker/files grworker1:/workspace
 
 
 --- NEW INTERFACE ---
-python dist.py --config ./config/config1.json
+python ember_train.py --config ./config/config1.json
+python ember_async_train.py --config ./config/config1.json
 
-python test.py --config ./config/config_solo.json
+-- tests
+python ember_train_GPU.py --config ./config/config1.json
+python ember_async_GPU.py --config ./config/config1.json
+
+python single.py --config ./config/config_solo.json
 
 # server side
 python server.py --config ./config/grayscale.json
-
+python server.py --config ./config/rgb.json
 
 
 
@@ -105,4 +111,12 @@ prune dangling images
 docker image prune -f
 
 
+
+docker cp grworker1:/workspace/files/gpu_utilization.csv /home/paraujo/POC/worker
+docker cp grworker1:/workspace/files/gpu_utilization_async.csv /home/paraujo/POC/worker
+
+
+
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/POC/worker/gpu_utilization.csv /home/patrick/CodeDepot/POC/GRPC
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/POC/worker/gpu_utilization_async.csv /home/patrick/CodeDepot/POC/GRPC
 

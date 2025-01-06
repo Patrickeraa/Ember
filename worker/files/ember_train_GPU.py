@@ -10,7 +10,14 @@ import torch.distributed as dist
 from apex.parallel import DistributedDataParallel as DDP
 from apex import amp
 from sklearn.metrics import precision_score, f1_score
+from tqdm import tqdm
 
+#gpu logic
+gpu_data = []
+import threading
+import csv
+import time 
+import pynvml
 
 import io
 import grpc
@@ -18,38 +25,83 @@ import pickle
 import io
 import dist_data_pb2
 import dist_data_pb2_grpc
-import dls
+import ember
 import modelFile
+
+def gpu_monitoring_thread(interval, gpu_data):
+    global stop_monitoring
+    pynvml.nvmlInit()
+    device_count = pynvml.nvmlDeviceGetCount()
+
+    while not stop_monitoring:
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            gpu_data.append((time.time(), i, utilization.gpu))
+        time.sleep(interval)
+    
+    pynvml.nvmlShutdown()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to the JSON configuration file')
-    args = dls.set_ambient(parser.parse_args().config)
+    args = ember.set_ambient(parser.parse_args().config)
     os.environ['MASTER_ADDR'] = 'grworker1'
     os.environ['MASTER_PORT'] = '8888'
     start = datetime.now()
-    train(0, args)
+
+    # GPU monitoring
+    global stop_monitoring
+    stop_monitoring = False
+    monitor_thread = threading.Thread(target=gpu_monitoring_thread, args=(0.1, gpu_data))
+    monitor_thread.start()
+    try:
+        mp.spawn(train, nprocs=args.gpus, args=(args,))
+    finally:
+        stop_monitoring = True
+        monitor_thread.join()
+    with open("gpu_utilization.csv", "w") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Time", "GPU_ID", "Utilization"])
+        writer.writerows(gpu_data)
     print("Training complete in: " + str(datetime.now() - start))
 
 
 def train(gpu, args):
-    model = modelFile.PretrainedModel()
+    rank = args.nr * args.gpus + gpu
+    dist.init_process_group(backend='nccl', init_method='env://', world_size=args.world_size, rank=rank)
+    torch.manual_seed(0)
+    model = modelFile.getModel()
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
-    batch_size = 100
-    # define loss function (criterion) and optimizer
+    batch_size = 200
     criterion = nn.CrossEntropyLoss().cuda(gpu)
-    optimizer = torch.optim.SGD(model.parameters(), 1e-4)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
+
     # Data loading code
-    # get dataset from the api
-    train_loader = dls.fetch_solo_loader(api_host="grserver", api_port="8040")
+    print("--------- TRAINING STATUS --------")
+    print("World Size: ", args.world_size)
+    print("Number of GPU's: ", args.gpus)
+    print("Machine Rank: ", args.nr)
+    print("Number of Epochs in the Training: ", args.epochs)
+    print("Number of Nodes: ", args.nodes)
+    print("----------------------------------")
 
 
-    total_step = len(train_loader)
+    start = datetime.now()
+    train_loader = ember.fetch_train_loader(api_host="grserver", api_port="8040", num_replicas=args.world_size, rank=rank, batch_size=batch_size)
+    print("\n----------------------------------")
+    print("Data loaded in: " + str(datetime.now() - start))
+    print("----------------------------------\n")
+
     for epoch in range(args.epochs):
-        for i, (images, labels) in enumerate(train_loader):
+        dist.barrier() 
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}", leave=False)
+        for i, (images, labels) in enumerate(progress_bar):
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
+
             # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -58,14 +110,16 @@ def train(gpu, args):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if (i + 1) % 100 == 0 and gpu == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, args.epochs, i + 1, total_step,
-                                                                         loss.item()))
+
+            progress_bar.set_description(f"Epoch {epoch + 1}/{args.epochs}, Loss: {loss.item():.4f}")
+
     if gpu == 0:
-        # Fetch the test loader
-        test_loader = dls.fetch_solo_test(api_host="grserver", api_port="8040")
-        
-        # Switch model to evaluation mode
+        print("Training complete")
+    if rank == 0:
+        print("Teste gpu 0")
+
+        # Test loading code
+        test_loader = ember.fetch_test_loader(api_host="grserver", api_port="8040")
         model.eval()
         
         all_labels = []
@@ -98,7 +152,6 @@ def train(gpu, args):
         print('Test Loss: {:.4f}'.format(average_loss))
         print('Test Precision: {:.4f}'.format(precision))
         print('Test F1 Score: {:.4f}'.format(f1))
-
 
 if __name__ == '__main__':
     main()
