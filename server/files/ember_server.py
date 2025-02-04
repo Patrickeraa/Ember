@@ -28,6 +28,13 @@ def parse_transform(transform_config):
             elif len(size) == 2:
                 size = tuple(size)
             transform_list.append(transforms.Resize(size))
+        elif t['name'] == 'RandomCrop':
+            print('RandomCrop')
+            transform_list.append(transforms.RandomCrop(size=t['args'][0]))
+        elif t['name'] == 'RandomHorizontalFlip':
+            print('RandomHorizontalFlip')
+            p = t['args'][0] if 'args' in t and len(t['args']) > 0 else 0.5
+            transform_list.append(transforms.RandomHorizontalFlip(p=p))
 
     print(transform_list)
     return transforms.Compose(transform_list)

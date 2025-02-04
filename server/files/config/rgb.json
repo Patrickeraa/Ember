@@ -10,7 +10,7 @@
       },
       {
           "name": "Resize",
-          "args": [256, 256]
+          "args": [112, 112]
       }
   ],
   "dataset_path": {

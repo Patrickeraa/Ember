@@ -66,8 +66,8 @@ docker build -t fastapi:latest .
 
 
 scp -i interns.pem -r /home/patrick/CodeDepot/POC/GRPC paraujo@209.20.158.4:/home/paraujo
-scp -i interns.pem -r /home/patrick/CodeDepot/POC/archive.zip paraujo@209.20.158.4:/home/paraujo/GRPC/dataset
-
+scp -i interns.pem -r /home/patrick/CodeDepot/POC/tinyImageNet.zip paraujo@209.20.158.4:/home/paraujo/POC/dataset
+scp -i interns.pem -r /home/patrick/CodeDepot/POC/.zip paraujo@209.20.158.4:/home/paraujo/POC/dataset
 
 scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/POC/worker/gpu_utilization.csv /home/patrick/CodeDepot/POC/GRPC
 
@@ -100,8 +100,8 @@ python single.py --config ./config/config_solo.json
 # server side
 python server.py --config ./config/grayscale.json
 python server.py --config ./config/rgb.json
-
-
+python server.py --config ./config/resnet.json
+python server.py --config ./config/cifar.json
 
 
 makes the older images dangling 
@@ -112,11 +112,18 @@ docker image prune -f
 
 
 
-docker cp grworker1:/workspace/files/gpu_utilization.csv /home/paraujo/POC/worker
-docker cp grworker1:/workspace/files/gpu_utilization_async.csv /home/paraujo/POC/worker
+docker cp grworker1:/workspace/files/gpu_utilization.csv /home/paraujo
+docker cp grworker1:/workspace/files/metrics_sync.txt /home/paraujo
+docker cp grworker1:/workspace/files/sync_metrics.json /home/paraujo
 
+docker cp grworker1:/workspace/files/gpu_utilization_async.csv /home/paraujo
+docker cp grworker1:/workspace/files/metrics_async.txt /home/paraujo
+docker cp grworker1:/workspace/files/async_metrics.json /home/paraujo
 
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/gpu_utilization.csv /home/patrick/CodeDepot/POC/GRPC
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/metrics_sync.txt /home/patrick/CodeDepot/POC/GRPC
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/sync_metrics.json /home/patrick/CodeDepot/POC/GRPC
 
-scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/POC/worker/gpu_utilization.csv /home/patrick/CodeDepot/POC/GRPC
-scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/POC/worker/gpu_utilization_async.csv /home/patrick/CodeDepot/POC/GRPC
-
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/gpu_utilization_async.csv /home/patrick/CodeDepot/POC/GRPC
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/metrics_async.txt /home/patrick/CodeDepot/POC/GRPC
+scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/async_metrics.json /home/patrick/CodeDepot/POC/GRPC

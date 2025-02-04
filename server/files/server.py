@@ -102,7 +102,12 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         dataset_path = transform_json['dataset_path']['train'] if train else transform_json['dataset_path']['test']
         print(f"Loading dataset from {dataset_path}")
         dataset = ImageFolder(root=dataset_path, transform=transform)
+        class_names = dataset.classes
+        num_classes = len(class_names)
         
+        # Print the number of classes and their names
+        print(f"Number of classes: {num_classes}")
+        print(f"Class names: {class_names}")
         return dataset
     
     def get_custom_dataset(self, train=True):
@@ -143,7 +148,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
                     img = to_pil(img)
                 
                 buffer = io.BytesIO()
-                img.save(buffer, format="PNG")
+                img.save(buffer, format="JPEG")
                 data.append((buffer.getvalue(), label))
 
             response_data = pickle.dumps(data)
