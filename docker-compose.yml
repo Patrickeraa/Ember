@@ -54,7 +54,7 @@ services:
       - NUM_CLASSES = 10
     container_name: grserver
     volumes:
-      - /home/paraujo/POC/dataset:/workspace/dataset
+      - /home/patrick.araujo/datasets:/workspace/datasets
     ports:
       - "8040:8040"
     networks:

@@ -117,7 +117,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             transforms.Normalize(mean=[0.5], std=[0.5]),
             transforms.Resize((256, 256))
         ])
-        dataset_path = "/workspace/dataset/vegetable_images/train" if train else "/workspace/dataset/vegetable_images/test"
+        dataset_path = "/workspace/dataset/MNIST/train" if train else "/workspace/dataset/MNIST/test"
 
         dataset = ImageFolder(root=dataset_path, transform=transform)
         print(f"Total number of samples in the {'train' if train else 'test'} dataset: {len(dataset)}")

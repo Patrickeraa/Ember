@@ -25,11 +25,42 @@ from PIL import Image
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 import time
+from sklearn.metrics import accuracy_score
+import json
+from torch.utils.tensorboard import SummaryWriter
+import psutil
+
+def calculate_top_k_accuracy(outputs, labels, k=1):
+    """Compute Top-k accuracy for the given outputs and labels."""
+    _, top_k_predictions = outputs.topk(k, dim=1, largest=True, sorted=True)
+    correct = top_k_predictions.eq(labels.view(-1, 1).expand_as(top_k_predictions))
+    return correct.any(dim=1).float().sum().item()
+
+#gpu logic
+gpu_data = []
+import threading
+import csv
+import time 
+import pynvml
 
 batch_queue = queue.Queue()
 all_images = []
 all_labels = []
 new_data_available = False
+
+def gpu_monitoring_thread(interval, gpu_data):
+    global stop_monitoring
+    pynvml.nvmlInit()
+    device_count = pynvml.nvmlDeviceGetCount()
+
+    while not stop_monitoring:
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            gpu_data.append((time.time(), i, utilization.gpu))
+        time.sleep(interval)
+    
+    pynvml.nvmlShutdown()
 
 def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
     global new_data_available
@@ -45,19 +76,13 @@ def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
     stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
     
     batch_idx = 0
-    
-    transform = transforms.Compose([
-        transforms.Grayscale(num_output_channels=1),
-        transforms.ToTensor(),                    
-        transforms.Normalize(mean=[0.5], std=[0.5])
-    ])
 
     while True:
         request = dist_data_pb2.BatchRequest(
             num_replicas=num_replicas,
             rank=rank,
             batch_idx=batch_idx,
-            batch_size=10000
+            batch_size=5000
         )
 
         response = stub.GetBatch(request)
@@ -70,13 +95,12 @@ def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
 
         converted_batch = []
         for img_data, label_data in batch:
-
             img_bytes = io.BytesIO(img_data)
             img = Image.open(img_bytes)
-            img = img.convert('RGB')
 
-            img_tensor = transform(img)
+            img_tensor = transforms.functional.to_tensor(img)
             label_tensor = torch.tensor(label_data)
+
             converted_batch.append((img_tensor, label_tensor))
 
         batch_queue.put(converted_batch)
@@ -108,7 +132,20 @@ def main():
     os.environ['MASTER_ADDR'] = 'grworker1'
     os.environ['MASTER_PORT'] = '8888'
     start = datetime.now()
-    mp.spawn(train, nprocs=args.gpus, args=(args,))
+    # GPU monitoring
+    global stop_monitoring
+    stop_monitoring = False
+    monitor_thread = threading.Thread(target=gpu_monitoring_thread, args=(0.1, gpu_data))
+    monitor_thread.start()
+    try:
+        mp.spawn(train, nprocs=args.gpus, args=(args,))
+    finally:
+        stop_monitoring = True
+        monitor_thread.join()
+    with open("gpu_utilization_async.csv", "w") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Time", "GPU_ID", "Utilization"])
+        writer.writerows(gpu_data)
     print("Training complete in: " + str(datetime.now() - start))
 
 
@@ -121,7 +158,8 @@ def train(gpu, args):
     model.cuda(gpu)
     batch_size = 400
     criterion = nn.CrossEntropyLoss().cuda(gpu)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=4e-5)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     # Data loading code
@@ -142,46 +180,62 @@ def train(gpu, args):
     epoch_counter = 0
     global new_data_available
     loop_check = 0
-    while epoch_counter < args.epochs:
 
+    epoch_losses = []
+    epoch_accuracies = []
+
+    # Define the filename to save training metrics
+    metrics_filename = "async_metrics.json"
+    writer = SummaryWriter(log_dir=f'/workspace/logs/train_gpu_{gpu}')
+    while epoch_counter < args.epochs:
         if new_data_available or epoch_counter == 0:
+            print("Creating new dataloader")
             dataloader = create_dataloader_from_queue(batch_queue)
             new_data_available = False
-
+        
         if dataloader:
-            # ---------------------- ALLREDUCE STEP -----------------------------
-            local_batch_count = len(dataloader)
-            local_batch_count_tensor = torch.tensor(local_batch_count, dtype=torch.int, device=torch.device(f'cuda:{gpu}'))
-            min_batch_count_tensor = local_batch_count_tensor.clone()
-            dist.all_reduce(min_batch_count_tensor, op=dist.ReduceOp.MIN)
-            min_batch_count = min_batch_count_tensor.item()
-            truncated_batches = list(dataloader)[:min_batch_count]
-            # -------------------------------------------------------------------
-
-
-            print(f"Epoch {epoch_counter + 1}/{args.epochs}, Min Batch Count Across Nodes: {min_batch_count}")
-            total_step = len(truncated_batches)
-
-            for i, (images, labels) in enumerate(truncated_batches):
+            total_step = len(dataloader)
+            epoch_loss = 0
+            correct_predictions = 0
+            total_predictions = 0
+            
+            progress_bar = tqdm(dataloader, desc=f"Epoch {epoch_counter + 1}/{args.epochs}", leave=False)
+            for i, (images, labels) in enumerate(progress_bar):
                 images = images.cuda(non_blocking=True)
                 labels = labels.cuda(non_blocking=True)
 
                 outputs = model(images)
                 loss = criterion(outputs, labels)
-
+                epoch_loss += loss.item()
+                
+                _, predicted = outputs.max(1)
+                correct_predictions += predicted.eq(labels).sum().item()
+                total_predictions += labels.size(0)
+                
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-
-                if (i + 1) % 100 == 0 or i == total_step - 1:
-                    print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(
-                        epoch_counter + 1, args.epochs, i + 1, total_step, loss.item()))
-
-            print(f"End of epoch {epoch_counter + 1}/{args.epochs}")
+                
+                progress_bar.set_description(f"Epoch {epoch_counter + 1}/{args.epochs}, Loss: {loss.item():.4f}")
+                
+            # Compute epoch metrics
+            epoch_loss /= total_step
+            epoch_accuracy = 100.0 * correct_predictions / total_predictions
+            
+            # Log to TensorBoard
+            writer.add_scalar("Loss/train", epoch_loss, epoch_counter)
+            writer.add_scalar("Accuracy/train", epoch_accuracy, epoch_counter)
+            writer.add_scalar("GPU Memory Allocated", torch.cuda.memory_allocated(gpu) / 1e6, epoch_counter)
+            writer.add_scalar("GPU Max Memory Allocated", torch.cuda.max_memory_allocated(gpu) / 1e6, epoch_counter)
+            writer.add_scalar("RAM Usage", psutil.virtual_memory().used / 1e6, epoch_counter)
+            
+            print(f"Epoch {epoch_counter + 1}/{args.epochs} - Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.2f}%")
+            
             epoch_counter += 1
+            scheduler.step()
+            
         else:
-            print("No new data available at this moment. ", loop_check)
-            loop_check += 1
+            print("No new data available at this moment.")
             time.sleep(1)
     if gpu == 0:
         print("Training complete")
@@ -196,6 +250,10 @@ def train(gpu, args):
         all_predictions = []
         total_loss = 0
         total_samples = 0
+
+        total_top1_correct = 0
+        total_top5_correct = 0
+
         
         with torch.no_grad():
             correct = 0
@@ -210,6 +268,11 @@ def train(gpu, args):
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
                 
+                            # Top-1 and Top-5 accuracy
+                total_top1_correct += calculate_top_k_accuracy(outputs, labels, k=1)
+                total_top5_correct += calculate_top_k_accuracy(outputs, labels, k=5)
+           
+
                 all_labels.extend(labels.cpu().numpy())
                 all_predictions.extend(predicted.cpu().numpy())
         
@@ -217,11 +280,38 @@ def train(gpu, args):
         average_loss = total_loss / total
         precision = precision_score(all_labels, all_predictions, average='weighted')
         f1 = f1_score(all_labels, all_predictions, average='weighted')
-        
-        print('Test Accuracy of the model on the test images: {} %'.format(accuracy))
-        print('Test Loss: {:.4f}'.format(average_loss))
-        print('Test Precision: {:.4f}'.format(precision))
-        print('Test F1 Score: {:.4f}'.format(f1))
+        top1_accuracy = 100 * total_top1_correct / total
+        top5_accuracy = 100 * total_top5_correct / total
+        top5_error = 100 - top5_accuracy
+        top1_error = 100 - top1_accuracy
+
+        filename = "metrics_async.txt"
+        with open(filename, "w") as file:
+            print('Test Accuracy of the model on the test images: {} %'.format(accuracy))
+            file.write('Test Accuracy of the model on the test images: {} %\n'.format(accuracy))
+            
+            print('Test Loss: {:.4f}'.format(average_loss))
+            file.write('Test Loss: {:.4f}\n'.format(average_loss))
+            
+            print('Test Precision: {:.4f}'.format(precision))
+            file.write('Test Precision: {:.4f}\n'.format(precision))
+            
+            print('Test F1 Score: {:.4f}'.format(f1))
+            file.write('Test F1 Score: {:.4f}\n'.format(f1))
+            
+            print('Test Top-1 Accuracy: {:.4f} %'.format(top1_accuracy))
+            file.write('Test Top-1 Accuracy: {:.4f} %\n'.format(top1_accuracy))
+            
+            print('Test Top-5 Accuracy: {:.4f} %'.format(top5_accuracy))
+            file.write('Test Top-5 Accuracy: {:.4f} %\n'.format(top5_accuracy))
+            
+            print('Test Top-5 Error: {:.4f} %'.format(top5_error))
+            file.write('Test Top-5 Error: {:.4f} %\n'.format(top5_error))
+            
+            print('Test Top-1 Error: {:.4f} %'.format(top1_error))
+            file.write('Test Top-1 Error: {:.4f} %\n'.format(top1_error))
+    writer.close()
+
 
 if __name__ == '__main__':
     main()

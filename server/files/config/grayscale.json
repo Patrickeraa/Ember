@@ -18,7 +18,7 @@
       }
   ],
   "dataset_path": {
-      "train": "/workspace/dataset/mnist-pngs-main/train",
-      "test": "/workspace/dataset/mnist-pngs-main/test"
+      "train": "/workspace/datasets/MNIST/train",
+      "test": "/workspace/datasets/MNIST/test"
   }
 }
