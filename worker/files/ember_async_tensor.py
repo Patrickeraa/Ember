@@ -15,11 +15,9 @@ import threading
 import io
 import grpc
 import pickle
-import ember
+from utils import ember, modelFile
 import io
-import dist_data_pb2
-import dist_data_pb2_grpc
-import modelFile
+from rpc import dist_data_pb2, dist_data_pb2_grpc
 import queue
 from PIL import Image
 import numpy as np

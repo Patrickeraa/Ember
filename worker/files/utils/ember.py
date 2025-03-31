@@ -16,8 +16,7 @@ import io
 import grpc
 import pickle
 import io
-import dist_data_pb2
-import dist_data_pb2_grpc
+from rpc import dist_data_pb2, dist_data_pb2_grpc
 
 
 class Args:
