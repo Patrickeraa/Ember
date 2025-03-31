@@ -1,0 +1,22 @@
+{
+    "transforms": [
+        {
+            "name": "ToTensor",
+            "args": []
+        },
+        {
+            "name": "Normalize",
+            "args": [[0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010]]
+        },
+        {
+            "name": "RandomCrop", "args": [32]
+        },
+        {
+            "name": "RandomHorizontalFlip", "args": [0.5]
+        }
+    ],
+    "dataset_path": {
+        "train": "/workspace/dataset/CIFAR-100-dataset-main/train",
+        "test": "/workspace/dataset/CIFAR-100-dataset-main/test"
+    }
+  }

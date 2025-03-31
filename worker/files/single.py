@@ -18,39 +18,33 @@ import pickle
 import io
 import dist_data_pb2
 import dist_data_pb2_grpc
-import dls
+import worker.files.ember as ember
 import modelFile
-
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to the JSON configuration file')
-    args = dls.set_ambient(parser.parse_args().config)
+    args = ember.set_ambient(parser.parse_args().config)
     os.environ['MASTER_ADDR'] = 'grworker1'
     os.environ['MASTER_PORT'] = '8888'
     start = datetime.now()
-    mp.spawn(train, nprocs=args.gpus, args=(args,))
+    train(0, args)
     print("Training complete in: " + str(datetime.now() - start))
 
 
 def train(gpu, args):
-    rank = args.nr * args.gpus + gpu
-    dist.init_process_group(backend='nccl', init_method='env://', world_size=args.world_size, rank=rank)
-    torch.manual_seed(0)
-    model = modelFile.ConvNet()
+    model = modelFile.PretrainedModel(num_classes=15)
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     batch_size = 100
-    
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda(gpu)
     optimizer = torch.optim.SGD(model.parameters(), 1e-4)
-
-    # Wrap the model
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
-
     # Data loading code
-    train_loader = dls.fetch_train_loader(api_host="grserver", api_port="8040", num_replicas=args.world_size, rank=rank, batch_size=batch_size)
+    # get dataset from the api
+    start = datetime.now()
+    train_loader = ember.fetch_solo_loader(api_host="grserver", api_port="8040")
+    print("Data loaded in: " + str(datetime.now() - start))
 
 
     total_step = len(train_loader)
@@ -70,10 +64,10 @@ def train(gpu, args):
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'.format(epoch + 1, args.epochs, i + 1, total_step,
                                                                          loss.item()))
     if gpu == 0:
-        print("Training complete")
-    if rank == 0:
-        print("Teste gpu 0")
-        test_loader = dls.fetch_test_loader(api_host="grserver", api_port="8040")
+        # Fetch the test loader
+        test_loader = ember.fetch_test_loader(api_host="grserver", api_port="8040")
+        
+        # Switch model to evaluation mode
         model.eval()
         
         all_labels = []
@@ -106,6 +100,7 @@ def train(gpu, args):
         print('Test Loss: {:.4f}'.format(average_loss))
         print('Test Precision: {:.4f}'.format(precision))
         print('Test F1 Score: {:.4f}'.format(f1))
+
 
 if __name__ == '__main__':
     main()

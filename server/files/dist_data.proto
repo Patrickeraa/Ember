@@ -2,19 +2,35 @@ syntax = "proto3";
 
 package dist_data;
 
+// Original message for fetching the entire train loader
 message TrainLoaderRequest {
     int32 num_replicas = 1;
     int32 rank = 2;
-    int32 batch_size = 3;
 }
 
+// Message for requesting a specific batch
+message BatchRequest {
+    int32 num_replicas = 1;
+    int32 rank = 2;
+    int32 batch_idx = 3;    // Index of the batch requested
+    int32 batch_size = 4;   // Size of the batch
+}
+
+// Original message for fetching the entire test loader
+message Empty {}
+
+// Response message containing the batch data (or empty when no more data)
 message TrainLoaderResponse {
     bytes data = 1;
 }
 
-message Empty {}
-
+// New service definition to get batches
 service TrainLoaderService {
     rpc GetTrainLoader(TrainLoaderRequest) returns (TrainLoaderResponse);
     rpc GetTestLoader(Empty) returns (TrainLoaderResponse);
+    rpc GetSoloLoader(Empty) returns (TrainLoaderResponse);
+    rpc GetSoloTest(Empty) returns (TrainLoaderResponse);
+
+    // New RPC method for batch-wise loading
+    rpc GetBatch(BatchRequest) returns (TrainLoaderResponse);  // New for requesting batches
 }

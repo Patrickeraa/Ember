@@ -1,0 +1,24 @@
+{
+  "transforms": [
+      {
+          "name": "Grayscale",
+          "args": [1]
+      },
+      {
+          "name": "ToTensor",
+          "args": []
+      },
+      {
+          "name": "Normalize",
+          "args": [[0.5], [0.5]]
+      },
+      {
+            "name": "Resize",
+            "args": [28]
+      }
+  ],
+  "dataset_path": {
+      "train": "/workspace/datasets/MNIST/train",
+      "test": "/workspace/datasets/MNIST/test"
+  }
+}

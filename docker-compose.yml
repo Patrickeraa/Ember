@@ -48,7 +48,13 @@ services:
 
   grserver:
     build: ./server
+    environment:
+      - NODES = 2
+      - BATCH_SIZE = 64
+      - NUM_CLASSES = 10
     container_name: grserver
+    volumes:
+      - /home/patrick.araujo/datasets:/workspace/datasets
     ports:
       - "8040:8040"
     networks:

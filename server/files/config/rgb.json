@@ -1,0 +1,20 @@
+{
+  "transforms": [
+      {
+          "name": "ToTensor",
+          "args": []
+      },
+      {
+          "name": "Normalize",
+          "args": [[0.5], [0.5]]
+      },
+      {
+          "name": "Resize",
+          "args": [112, 112]
+      }
+  ],
+  "dataset_path": {
+      "train": "/workspace/dataset/vegetable_images/train",
+      "test": "/workspace/dataset/vegetable_images/test"
+  }
+}

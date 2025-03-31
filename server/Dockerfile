@@ -1,6 +1,6 @@
 FROM python:3.9-slim
-WORKDIR /app
+WORKDIR /workspace
 COPY . .
-RUN pip install --no-cache-dir grpcio grpcio-tools torch torchvision
+RUN pip install --no-cache-dir grpcio grpcio-tools protobuf==5.27.2 torch torchvision scipy tqdm
 
 CMD ["tail", "-f", "/dev/null"]
