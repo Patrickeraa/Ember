@@ -15,9 +15,8 @@ import threading
 import io
 import grpc
 import pickle
-from utils import ember, modelFile
-import io
 from rpc import dist_data_pb2, dist_data_pb2_grpc
+from utils import ember, modelFile
 import queue
 from PIL import Image
 import numpy as np
@@ -26,7 +25,6 @@ import time
 from sklearn.metrics import accuracy_score
 import json
 from torch.utils.tensorboard import SummaryWriter
-import psutil
 
 def calculate_top_k_accuracy(outputs, labels, k=1):
     """Compute Top-k accuracy for the given outputs and labels."""
@@ -156,8 +154,7 @@ def train(gpu, args):
     model.cuda(gpu)
     batch_size = 400
     criterion = nn.CrossEntropyLoss().cuda(gpu)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=4e-5)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     # Data loading code
@@ -184,56 +181,83 @@ def train(gpu, args):
 
     # Define the filename to save training metrics
     metrics_filename = "async_metrics.json"
-    writer = SummaryWriter(log_dir=f'/workspace/logs/train_gpu_{gpu}')
+    writer = SummaryWriter(log_dir="runs/async")
+
     while epoch_counter < args.epochs:
-        if new_data_available or epoch_counter == 0:
-            print("Creating new dataloader")
-            dataloader = create_dataloader_from_queue(batch_queue)
-            new_data_available = False
-        
+
+        #if new_data_available or epoch_counter == 0:
+        print("Creating new dataloader")
+        start = datetime.now()
+        dataloader = create_dataloader_from_queue(batch_queue)
+        new_data_available = False
+        print("Dataloader created in: ", datetime.now() - start)
+
         if dataloader:
-            total_step = len(dataloader)
+            # ---------------------- ALLREDUCE STEP -----------------------------
+            start = datetime.now()
+            local_batch_count = len(dataloader)
+            local_batch_count_tensor = torch.tensor(
+                local_batch_count, dtype=torch.int, device=torch.device(f'cuda:{gpu}')
+            )
+            min_batch_count_tensor = local_batch_count_tensor.clone()
+            dist.all_reduce(min_batch_count_tensor, op=dist.ReduceOp.MIN)
+            min_batch_count = min_batch_count_tensor.item()
+            if local_batch_count != min_batch_count:
+                truncated_batches = []
+                for i, batch in enumerate(dataloader):
+                    if i >= min_batch_count:
+                        break
+                    truncated_batches.append(batch)
+            else:
+                truncated_batches = dataloader
+            # -------------------------------------------------------------------
+            print("Allreduce in: ", datetime.now() - start)
+            print(f"Epoch {epoch_counter + 1}/{args.epochs}, Min Batch Count Across Nodes: {min_batch_count}")
+            total_step = len(truncated_batches)
+
+            # epoch metrics
             epoch_loss = 0
             correct_predictions = 0
             total_predictions = 0
-            
-            progress_bar = tqdm(dataloader, desc=f"Epoch {epoch_counter + 1}/{args.epochs}", leave=False)
+            progress_bar = tqdm(truncated_batches, desc=f"Epoch {epoch_counter + 1}/{args.epochs}", leave=False)
             for i, (images, labels) in enumerate(progress_bar):
                 images = images.cuda(non_blocking=True)
                 labels = labels.cuda(non_blocking=True)
 
                 outputs = model(images)
                 loss = criterion(outputs, labels)
-                epoch_loss += loss.item()
-                
+                epoch_loss += loss.item() 
+
+                # Update accuracy
                 _, predicted = outputs.max(1)
                 correct_predictions += predicted.eq(labels).sum().item()
                 total_predictions += labels.size(0)
-                
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                
                 progress_bar.set_description(f"Epoch {epoch_counter + 1}/{args.epochs}, Loss: {loss.item():.4f}")
-                
-            # Compute epoch metrics
+            # Calculate average loss and accuracy for the epoch
             epoch_loss /= total_step
             epoch_accuracy = 100.0 * correct_predictions / total_predictions
-            
-            # Log to TensorBoard
-            writer.add_scalar("Loss/train", epoch_loss, epoch_counter)
-            writer.add_scalar("Accuracy/train", epoch_accuracy, epoch_counter)
-            writer.add_scalar("GPU Memory Allocated", torch.cuda.memory_allocated(gpu) / 1e6, epoch_counter)
-            writer.add_scalar("GPU Max Memory Allocated", torch.cuda.max_memory_allocated(gpu) / 1e6, epoch_counter)
-            writer.add_scalar("RAM Usage", psutil.virtual_memory().used / 1e6, epoch_counter)
-            
-            print(f"Epoch {epoch_counter + 1}/{args.epochs} - Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.2f}%")
-            
+            epoch_losses.append(epoch_loss)
+            epoch_accuracies.append(epoch_accuracy)
+
+            # Log metrics to TensorBoard
+            writer.add_scalar('Loss/epoch', epoch_loss, epoch_counter)
+            writer.add_scalar('Accuracy/epoch', epoch_accuracy, epoch_counter)
+            writer.add_scalar('Batches/epoch', min_batch_count, epoch_counter)
+
+            print(f"End of epoch {epoch_counter + 1}/{args.epochs}")
             epoch_counter += 1
-            scheduler.step()
-            
+
+            # Save metrics to file after each epoch
+            with open(metrics_filename, "w") as file:
+                json.dump({"losses": epoch_losses, "accuracies": epoch_accuracies}, file)
+
         else:
-            print("No new data available at this moment.")
+            print("No new data available at this moment. ", loop_check)
+            loop_check += 1
             time.sleep(1)
     if gpu == 0:
         print("Training complete")
@@ -309,7 +333,7 @@ def train(gpu, args):
             print('Test Top-1 Error: {:.4f} %'.format(top1_error))
             file.write('Test Top-1 Error: {:.4f} %\n'.format(top1_error))
     writer.close()
-
+    
 
 if __name__ == '__main__':
     main()

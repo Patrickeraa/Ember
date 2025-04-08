@@ -15,11 +15,8 @@ import threading
 import io
 import grpc
 import pickle
-import ember
-import io
-import dist_data_pb2
-import dist_data_pb2_grpc
-import modelFile
+from rpc import dist_data_pb2, dist_data_pb2_grpc
+from utils import ember, modelFile
 import queue
 from PIL import Image
 import numpy as np
@@ -80,7 +77,7 @@ def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
             num_replicas=num_replicas,
             rank=rank,
             batch_idx=batch_idx,
-            batch_size=5000
+            batch_size=10000
         )
 
         response = stub.GetBatch(request)
@@ -118,7 +115,7 @@ def create_dataloader_from_queue(batch_queue, stop_signal=None):
         images_tensor = torch.stack(all_images)
         labels_tensor = torch.tensor(all_labels)
         dataset = TensorDataset(images_tensor, labels_tensor)
-        dataloader = DataLoader(dataset, batch_size=100, shuffle=True, pin_memory=True, num_workers=0)
+        dataloader = DataLoader(dataset, batch_size=64, shuffle=True, pin_memory=True, num_workers=0)
         return dataloader
     else:
         return None

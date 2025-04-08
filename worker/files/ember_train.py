@@ -16,10 +16,8 @@ import io
 import grpc
 import pickle
 import io
-import dist_data_pb2
-import dist_data_pb2_grpc
-import ember
-import modelFile
+from rpc import dist_data_pb2, dist_data_pb2_grpc
+from utils import ember, modelFile
 
 def main():
     parser = argparse.ArgumentParser()
@@ -39,7 +37,7 @@ def train(gpu, args):
     model = modelFile.getModel()
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
-    batch_size = 400
+    batch_size = 100
     criterion = nn.CrossEntropyLoss().cuda(gpu)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])

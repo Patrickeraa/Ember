@@ -2,5 +2,5 @@
     "nodes": 2,
     "gpus": 1,
     "nr": 0,
-    "epochs": 10
+    "epochs": 20
 }
