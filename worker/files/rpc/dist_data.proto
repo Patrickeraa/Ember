@@ -24,6 +24,11 @@ message TrainLoaderResponse {
     bytes data = 1;
 }
 
+message Sample {
+  bytes tensor = 1;
+  int32 label = 2;
+}
+
 // New service definition to get batches
 service TrainLoaderService {
     rpc GetTrainLoader(TrainLoaderRequest) returns (TrainLoaderResponse);
@@ -33,14 +38,5 @@ service TrainLoaderService {
 
     // New RPC method for batch-wise loading
     rpc GetBatch(BatchRequest) returns (TrainLoaderResponse);  // New for requesting batches
-}
-
-message Sample {
-  bytes tensor = 1;
-  int32 label = 2;
-}
-
-service TrainLoaderServiceStream {
-  // Streaming de Sample: o servidor envia um fluxo de Sample em batches
-  rpc GetTrainStream(TrainLoaderRequest) returns (stream Sample);
+    rpc GetTrainStream(TrainLoaderRequest) returns (stream Sample);
 }

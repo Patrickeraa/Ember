@@ -60,6 +60,11 @@ class TrainLoaderServiceStub(object):
                 request_serializer=dist__data__pb2.BatchRequest.SerializeToString,
                 response_deserializer=dist__data__pb2.TrainLoaderResponse.FromString,
                 _registered_method=True)
+        self.GetTrainStream = channel.unary_stream(
+                '/dist_data.TrainLoaderService/GetTrainStream',
+                request_serializer=dist__data__pb2.TrainLoaderRequest.SerializeToString,
+                response_deserializer=dist__data__pb2.Sample.FromString,
+                _registered_method=True)
 
 
 class TrainLoaderServiceServicer(object):
@@ -98,6 +103,12 @@ class TrainLoaderServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetTrainStream(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TrainLoaderServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -125,6 +136,11 @@ def add_TrainLoaderServiceServicer_to_server(servicer, server):
                     servicer.GetBatch,
                     request_deserializer=dist__data__pb2.BatchRequest.FromString,
                     response_serializer=dist__data__pb2.TrainLoaderResponse.SerializeToString,
+            ),
+            'GetTrainStream': grpc.unary_stream_rpc_method_handler(
+                    servicer.GetTrainStream,
+                    request_deserializer=dist__data__pb2.TrainLoaderRequest.FromString,
+                    response_serializer=dist__data__pb2.Sample.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -273,52 +289,6 @@ class TrainLoaderService(object):
             metadata,
             _registered_method=True)
 
-
-class TrainLoaderServiceStreamStub(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.GetTrainStream = channel.unary_stream(
-                '/dist_data.TrainLoaderServiceStream/GetTrainStream',
-                request_serializer=dist__data__pb2.TrainLoaderRequest.SerializeToString,
-                response_deserializer=dist__data__pb2.Sample.FromString,
-                _registered_method=True)
-
-
-class TrainLoaderServiceStreamServicer(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def GetTrainStream(self, request, context):
-        """Streaming de Sample: o servidor envia um fluxo de Sample em batches
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_TrainLoaderServiceStreamServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'GetTrainStream': grpc.unary_stream_rpc_method_handler(
-                    servicer.GetTrainStream,
-                    request_deserializer=dist__data__pb2.TrainLoaderRequest.FromString,
-                    response_serializer=dist__data__pb2.Sample.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'dist_data.TrainLoaderServiceStream', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('dist_data.TrainLoaderServiceStream', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class TrainLoaderServiceStream(object):
-    """Missing associated documentation comment in .proto file."""
-
     @staticmethod
     def GetTrainStream(request,
             target,
@@ -333,7 +303,7 @@ class TrainLoaderServiceStream(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/dist_data.TrainLoaderServiceStream/GetTrainStream',
+            '/dist_data.TrainLoaderService/GetTrainStream',
             dist__data__pb2.TrainLoaderRequest.SerializeToString,
             dist__data__pb2.Sample.FromString,
             options,
