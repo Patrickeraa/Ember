@@ -40,7 +40,7 @@ message Sample {
   int32 label = 2;
 }
 
-service TrainLoaderService {
+service TrainLoaderServiceStream {
   // Streaming de Sample: o servidor envia um fluxo de Sample em batches
   rpc GetTrainStream(TrainLoaderRequest) returns (stream Sample);
 }
