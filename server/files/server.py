@@ -148,6 +148,8 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             print(f"Error serving batch {batch_idx} for rank {rank}: {str(e)}")
             raise
+
+        
         
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10),
