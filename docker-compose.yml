@@ -13,6 +13,7 @@ services:
       - API_PORT=8040
     tty: true  
     stdin_open: true
+    shm_size: '8gb'
     networks:
       - mynetwork
     deploy:
@@ -36,6 +37,7 @@ services:
       - API_PORT=8040
     tty: true
     stdin_open: true
+    shm_size: '8gb'
     networks:
       - mynetwork
     deploy:

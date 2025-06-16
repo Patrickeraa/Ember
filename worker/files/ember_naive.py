@@ -79,19 +79,44 @@ def train(gpu, args):
         train_total = 0
         train_correct_top1 = 0
         train_correct_top5 = 0
-        for i, (images, labels) in enumerate(progress_bar):
 
+        times_data     = []
+        times_forward  = []
+        times_loss     = []
+        times_backward = []
+        times_step     = []
+        for i, (images, labels) in enumerate(progress_bar):
+            t0 = time.time()
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
+            t1 = time.time()
+            times_data.append(t1 - t0)
 
             # Forward pass
+            t0 = time.time()
             outputs = model(images)
+            t1 = time.time()
+            times_forward.append(t1 - t0)
+
+            t0 = time.time()
             loss = criterion(outputs, labels)
+            t1 = time.time()
+            times_loss.append(t1 - t0)
+
 
             # Backward and optimize
+            t0 = time.time()
             optimizer.zero_grad()
             loss.backward()
+            t1 = time.time()
+            times_backward.append(t1 - t0)
+
+
+            t0 = time.time()
             optimizer.step()
+            t1 = time.time()
+            times_step.append(t1 - t0)
+
             
             batch_size = images.size(0)
             train_loss_sum += loss.item() * batch_size
@@ -112,6 +137,28 @@ def train(gpu, args):
             epoch_duration = time.time() - epoch_start_time
             writer.add_scalar('Time/Epoch', epoch_duration, epoch)
             progress_bar.set_description(f"Epoch {epoch + 1}/{args.epochs}, Loss: {loss.item():.4f}")
+
+    import numpy as np
+    avg_data     = np.mean(times_data)
+    std_data     = np.std(times_data)
+    avg_forward  = np.mean(times_forward)
+    std_forward  = np.std(times_forward)
+    avg_loss     = np.mean(times_loss)
+    std_loss     = np.std(times_loss)
+    avg_backward = np.mean(times_backward)
+    std_backward = np.std(times_backward)
+    avg_step     = np.mean(times_step)
+    std_step     = np.std(times_step)
+
+    # Caminho do arquivo de saída
+    timings_path = os.path.join("/workspace", "timings_ember.txt")
+    with open(timings_path, "w") as f:
+        f.write("=== Médias de Tempo por Etapa (s) ===\n")
+        f.write(f"Data transfer     : {avg_data:.6f} ± {std_data:.6f}\n")
+        f.write(f"Forward           : {avg_forward:.6f} ± {std_forward:.6f}\n")
+        f.write(f"Loss computation  : {avg_loss:.6f} ± {std_loss:.6f}\n")
+        f.write(f"Backward          : {avg_backward:.6f} ± {std_backward:.6f}\n")
+        f.write(f"Optimizer step    : {avg_step:.6f} ± {std_step:.6f}\n")
     writer.close()
 
     print("Training complete in: " + str(datetime.now() - train_start))

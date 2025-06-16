@@ -68,8 +68,14 @@ def train(gpu, args):
     print("\n----------------------------------")
     print("Data loaded in: " + str(datetime.now() - start))
     print("----------------------------------\n")
-
-
+    prof = profile(
+        activities=[ProfilerActivity.CUDA],
+        schedule=schedule(wait=1, warmup=1, active=3, repeat=2),
+        on_trace_ready=tensorboard_trace_handler(custom_log_dir),
+        record_shapes=True,
+        with_stack=True
+    )
+    prof.start()
     for epoch in range(args.epochs):
         epoch_start_time = time.time()
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}", leave=False)
@@ -92,6 +98,7 @@ def train(gpu, args):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            prof.step()
             
             batch_size = images.size(0)
             train_loss_sum += loss.item() * batch_size
@@ -113,6 +120,7 @@ def train(gpu, args):
             writer.add_scalar('Time/Epoch', epoch_duration, epoch)
             progress_bar.set_description(f"Epoch {epoch + 1}/{args.epochs}, Loss: {loss.item():.4f}")
     writer.close()
+    prof.stop()
 
     print("Training complete in: " + str(datetime.now() - train_start))
     if gpu == 0:

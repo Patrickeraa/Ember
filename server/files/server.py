@@ -23,41 +23,32 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
 
     def GetTrainLoader(self, request, context):
         try:
-            partitioned_dataset = ember_server.partition_dataset(self.dataset, request.rank, request.num_replicas)
-            
             data = []
-            to_pil = transforms.ToPILImage()
-
-            for img, label in partitioned_dataset:
-                if isinstance(img, torch.Tensor):
-                    img = to_pil(img)
-                
+            for tensor_img, label in self.dataset:
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG")
+                torch.save(tensor_img, buffer)
                 data.append((buffer.getvalue(), label))
 
             response_data = pickle.dumps(data)
             return dist_data_pb2.TrainLoaderResponse(data=response_data)
+
         except Exception as e:
             context.set_details(f"Error: {str(e)}")
             context.set_code(grpc.StatusCode.INTERNAL)
             raise
 
     def GetTestLoader(self, request, context):
-        try: 
+        try:
             data = []
-            to_pil = transforms.ToPILImage()
+            for tensor_img, label in self.test_set:
+                buf = io.BytesIO()
 
-            for img, label in self.test_set:
-                if isinstance(img, torch.Tensor):
-                    img = to_pil(img)
-                
-                buffer = io.BytesIO()
-                img.save(buffer, format="JPEG")
-                data.append((buffer.getvalue(), label))
+                torch.save(tensor_img, buf)
+                data.append((buf.getvalue(), label))
 
             response_data = pickle.dumps(data)
             return dist_data_pb2.TrainLoaderResponse(data=response_data)
+
         except Exception as e:
             context.set_details(f"Error: {str(e)}")
             context.set_code(grpc.StatusCode.INTERNAL)
@@ -74,7 +65,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
                     img = to_pil(img)
 
                 buffer = io.BytesIO()
-                img.save(buffer, format="JPEG")
+                img.save(buffer, format="PNG")
                 data.append((buffer.getvalue(), label))
             print(type(data), data[:5])  
             response_data = pickle.dumps(data)
@@ -105,7 +96,6 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         class_names = dataset.classes
         num_classes = len(class_names)
         
-        # Print the number of classes and their names
         print(f"Number of classes: {num_classes}")
         print(f"Class names: {class_names}")
         return dataset
@@ -131,25 +121,23 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             batch_size = request.batch_size
 
             start = datetime.now()
-            partitioned_dataset = ember_server.partition_dataset(self.dataset, rank, num_replicas)
 
             start_idx = batch_idx * batch_size
-            end_idx = min(start_idx + batch_size, len(partitioned_dataset))
+            end_idx = min(start_idx + batch_size, len(self.dataset))
 
-            if start_idx >= len(partitioned_dataset):
+            if start_idx >= len(self.dataset):
                 print(f"All batches sent to client {rank}")
                 return dist_data_pb2.TrainLoaderResponse(data=b"")
+
             print(f"Serving batch {batch_idx} for rank {rank}: {start_idx} to {end_idx}")
-            batch = [partitioned_dataset[i] for i in range(start_idx, end_idx)]
+            batch = [self.dataset[i] for i in range(start_idx, end_idx)]
+
             data = []
-            to_pil = transforms.ToPILImage()
-            for img, label in batch:
-                if isinstance(img, torch.Tensor):
-                    img = to_pil(img)
-                
-                buffer = io.BytesIO()
-                img.save(buffer, format="JPEG")
-                data.append((buffer.getvalue(), label))
+            for tensor_img, label in batch:
+                buf = io.BytesIO()
+                # serializa o tensor (inclui dtype e shape)
+                torch.save(tensor_img, buf)
+                data.append((buf.getvalue(), label))
 
             response_data = pickle.dumps(data)
             print("Batch sent in: " + str(datetime.now() - start))

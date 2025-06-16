@@ -90,6 +90,7 @@ docker cp /home/paraujo/GRPC/worker/files grworker1:/workspace
 --- NEW INTERFACE ---
 python ember_train.py --config ./config/config1.json
 python ember_async_train.py --config ./config/config1.json
+python ember_async_tensor.py --config ./config/config1.json
 
 -- tests
 python ember_train_GPU.py --config ./config/config1.json
@@ -127,3 +128,20 @@ scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/sync_metrics.json /home
 scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/gpu_utilization_async.csv /home/patrick/CodeDepot/POC/GRPC
 scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/metrics_async.txt /home/patrick/CodeDepot/POC/GRPC
 scp -i interns.pem -r paraujo@209.20.158.4:/home/paraujo/async_metrics.json /home/patrick/CodeDepot/POC/GRPC
+
+
+
+
+SAVE LOGS
+
+Ember:
+sudo docker cp grworker1:/workspace/files/runs /home/patrick.araujo
+sudo docker cp grworker2:/workspace/files/runs /home/patrick.araujo
+
+scp -r patrick.araujo@200.131.223.221:/home/patrick.araujo/runs /home/ubuntrick/Codedepot/New_Results
+
+
+sudo docker compose up -d --shm-size=8g 
+
+
+

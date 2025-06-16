@@ -7,7 +7,7 @@ import torch.nn.functional as F
 # Put the model you want to train in this file and then it's name on the return bellow (line 10)
 # remember to put any extra information needed inside the model parameters or manually set them on the class
 def getModel():
-    return MNISTModel();
+    return simpleCIFAR();
 
 class ConvNet(nn.Module):
     def __init__(self, num_classes=10):
@@ -274,3 +274,49 @@ class CIFAR100ResNet(nn.Module):
 
 def ResNetCIFAR(num_classes=100):
     return CIFAR100ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes)
+
+class simpleCIFAR(nn.Module):
+    def __init__(self):
+        super(simpleCIFAR, self).__init__()
+        self.features = nn.Sequential(
+            # Block 1: Input size: [3, 32, 32] -> Output size: [64, 32, 32]
+            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # Output size: [64, 16, 16]
+
+            # Block 2: Output size: [128, 16, 16] -> After pool: [128, 8, 8]
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # Output size: [128, 8, 8]
+
+            # Block 3: Output size: [256, 8, 8] -> After pool: [256, 4, 4]
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)   # Output size: [256, 4, 4]
+        )
+        
+        self.classifier = nn.Sequential(
+            nn.Linear(256 * 4 * 4, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(512, 10)
+        )
+    
+    def forward(self, x):
+        x = self.features(x)
+        # Flatten for the classifier
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x

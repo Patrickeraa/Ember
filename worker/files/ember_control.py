@@ -58,61 +58,32 @@ def train(gpu, args):
     print("Number of Nodes: ", args.nodes)
     print("----------------------------------")
 
-    LOG_DIR = "/workspace/runs/tensorboard_run"
-    custom_log_dir = os.path.join(LOG_DIR, f"worker_{args.nr}")
-    os.makedirs(custom_log_dir, exist_ok=True)
-    writer = SummaryWriter(custom_log_dir)
-    writer.add_text('Training Configuration', f"World Size: {args.world_size}, GPUs: {args.gpus}, Epochs: {args.epochs}, Nodes: {args.nodes}")
     start = datetime.now()
     train_loader, sampler = ember.fetch_train_loader(api_host="grserver", api_port="8040", num_replicas=args.world_size, rank=rank, batch_size=batch_size)
     print("\n----------------------------------")
     print("Data loaded in: " + str(datetime.now() - start))
     print("----------------------------------\n")
 
-
     for epoch in range(args.epochs):
         epoch_start_time = time.time()
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}", leave=False)
         sampler.set_epoch(epoch)
         batch_step = 0
         train_loss_sum = 0.0
         train_total = 0
         train_correct_top1 = 0
         train_correct_top5 = 0
-        for i, (images, labels) in enumerate(progress_bar):
 
+        for images, labels in tqdm(train_loader, desc=f"Train Epoch {epoch}"):
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
 
-            # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
 
-            # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
-            batch_size = images.size(0)
-            train_loss_sum += loss.item() * batch_size
-            train_total += batch_size
-            _, pred_top1 = outputs.topk(1, dim=1)
-            train_correct_top1 += (pred_top1.squeeze() == labels).sum().item()
-            _, pred_top5 = outputs.topk(5, dim=1)
-            train_correct_top5 += (pred_top5 == labels.unsqueeze(1)).sum().item()
 
-
-            train_loss_avg = train_loss_sum / train_total
-            train_top1_acc = train_correct_top1 / train_total
-            train_top5_acc = train_correct_top5 / train_total
-
-            writer.add_scalar('Loss/Train', train_loss_avg, epoch)
-            writer.add_scalar('Accuracy/Top1', train_top1_acc, epoch)
-            writer.add_scalar('Accuracy/Top5', train_top5_acc, epoch)
-            epoch_duration = time.time() - epoch_start_time
-            writer.add_scalar('Time/Epoch', epoch_duration, epoch)
-            progress_bar.set_description(f"Epoch {epoch + 1}/{args.epochs}, Loss: {loss.item():.4f}")
-    writer.close()
 
     print("Training complete in: " + str(datetime.now() - train_start))
     if gpu == 0:

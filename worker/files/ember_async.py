@@ -24,6 +24,8 @@ from torch.utils.data import DataLoader, TensorDataset
 import time
 from sklearn.metrics import accuracy_score
 import json
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import TensorDataset, DataLoader, DistributedSampler
 
 def calculate_top_k_accuracy(outputs, labels, k=1):
     """Compute Top-k accuracy for the given outputs and labels."""
@@ -59,66 +61,92 @@ def gpu_monitoring_thread(interval, gpu_data):
 
 def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
     global new_data_available
-    max_message_length = 1000 * 1024 * 1024
+    max_msg = 1000 * 1024 * 1024
     channel = grpc.insecure_channel(
         f'{api_host}:{api_port}',
         options=[
-            ('grpc.max_send_message_length', max_message_length),
-            ('grpc.max_receive_message_length', max_message_length)
+            ('grpc.max_send_message_length', max_msg),
+            ('grpc.max_receive_message_length', max_msg)
         ]
     )
-    
     stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
-    
-    batch_idx = 0
 
+    batch_idx = 0
     while True:
         request = dist_data_pb2.BatchRequest(
             num_replicas=num_replicas,
             rank=rank,
             batch_idx=batch_idx,
-            batch_size=10000
+            batch_size=5000
         )
-
         response = stub.GetBatch(request)
 
+        # fim das batches
         if not response.data:
             batch_queue.put(None)
             break
 
-        batch = pickle.loads(response.data)
-
+        raw = pickle.loads(response.data)
         converted_batch = []
-        for img_data, label_data in batch:
-            img_bytes = io.BytesIO(img_data)
-            img = Image.open(img_bytes)
-
-            img_tensor = transforms.functional.to_tensor(img)
+        for tensor_bytes, label_data in raw:
+            buf = io.BytesIO(tensor_bytes)
+            # desserializa exato torch.Tensor
+            img_tensor = torch.load(buf)
             label_tensor = torch.tensor(label_data)
-
             converted_batch.append((img_tensor, label_tensor))
 
         batch_queue.put(converted_batch)
         new_data_available = True
         batch_idx += 1
 
-def create_dataloader_from_queue(batch_queue, stop_signal=None):
-    while not batch_queue.empty():
-        batch = batch_queue.get()
+def create_dataloader_from_queue(batch_queue, num_replicas, rank, batch_size=100):
+    # 1) Inicializa o buffer persistente na primeira chamada
+    if not hasattr(create_dataloader_from_queue, "images"):
+        create_dataloader_from_queue.images = []
+        create_dataloader_from_queue.labels = []
+
+    # 2) Move tudo da queue pro buffer, mas não zera o buffer
+    while True:
+        try:
+            batch = batch_queue.get_nowait()
+        except queue.Empty:
+            break
         if batch is None:
             break
-        for img_tensor, label in batch:
-            all_images.append(img_tensor)
-            all_labels.append(label)
+        for img_tensor, label_tensor in batch:
+            create_dataloader_from_queue.images.append(img_tensor)
+            create_dataloader_from_queue.labels.append(label_tensor)
 
-    if all_images and all_labels:
-        images_tensor = torch.stack(all_images)
-        labels_tensor = torch.tensor(all_labels)
-        dataset = TensorDataset(images_tensor, labels_tensor)
-        dataloader = DataLoader(dataset, batch_size=64, shuffle=True, pin_memory=True, num_workers=0)
-        return dataloader
+    # 3) Empilha o buffer inteiro em tensores
+    if create_dataloader_from_queue.images:
+        images_tensor = torch.stack(create_dataloader_from_queue.images)
+        labels_tensor = torch.stack(create_dataloader_from_queue.labels)
     else:
-        return None
+        # buffer ainda vazio → dataset vazio
+        images_tensor = torch.empty((0, 3, 32, 32))
+        labels_tensor = torch.empty((0,), dtype=torch.long)
+
+    dataset = TensorDataset(images_tensor, labels_tensor)
+
+    # 4) Cria sampler distribuído sobre todo o dataset acumulado
+    sampler = DistributedSampler(
+        dataset,
+        num_replicas=num_replicas,
+        rank=rank,
+        shuffle=True,
+        drop_last=False
+    )
+
+    # 5) DataLoader
+    dataloader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=0,
+        pin_memory=True
+    )
+
+    return dataloader, sampler
 
 def main():
     parser = argparse.ArgumentParser()
@@ -153,8 +181,7 @@ def train(gpu, args):
     model.cuda(gpu)
     batch_size = 400
     criterion = nn.CrossEntropyLoss().cuda(gpu)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=4e-5)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
     # Data loading code
@@ -181,18 +208,20 @@ def train(gpu, args):
 
     # Define the filename to save training metrics
     metrics_filename = "async_metrics.json"
+    writer = SummaryWriter(log_dir="runs/async")
+
     while epoch_counter < args.epochs:
 
-        if new_data_available or epoch_counter == 0:
-            print("Creating new dataloader")
-            start = datetime.now()
-            dataloader = create_dataloader_from_queue(batch_queue)
-            new_data_available = False
-            print("Dataloader created in: ", datetime.now() - start)
+        #if new_data_available or epoch_counter == 0:
+        #print("Creating new dataloader")
+
+        dataloader, sampler = create_dataloader_from_queue(batch_queue, args.world_size, rank)
+        new_data_available = False
+        #print("Dataloader created in: ", datetime.now() - start)
 
         if dataloader:
             # ---------------------- ALLREDUCE STEP -----------------------------
-            start = datetime.now()
+            epoch_start_time = time.time()
             local_batch_count = len(dataloader)
             local_batch_count_tensor = torch.tensor(
                 local_batch_count, dtype=torch.int, device=torch.device(f'cuda:{gpu}')
@@ -209,16 +238,21 @@ def train(gpu, args):
             else:
                 truncated_batches = dataloader
             # -------------------------------------------------------------------
-            print("Allreduce in: ", datetime.now() - start)
-            print(f"Epoch {epoch_counter + 1}/{args.epochs}, Min Batch Count Across Nodes: {min_batch_count}")
+            #print("Allreduce in: ", datetime.now() - start)
+            #print(f"Epoch {epoch_counter + 1}/{args.epochs}, Min Batch Count Across Nodes: {min_batch_count}")
             total_step = len(truncated_batches)
 
             # epoch metrics
             epoch_loss = 0
             correct_predictions = 0
             total_predictions = 0
-            progress_bar = tqdm(truncated_batches, desc=f"Epoch {epoch_counter + 1}/{args.epochs}", leave=False)
-            for i, (images, labels) in enumerate(progress_bar):
+            train_loss_sum = 0.0
+            train_total = 0
+            train_correct_top1 = 0
+            train_correct_top5 = 0
+
+            sampler.set_epoch(epoch_counter)
+            for images, labels in tqdm(truncated_batches, desc=f"Train Epoch {epoch_counter}"):
                 images = images.cuda(non_blocking=True)
                 labels = labels.cuda(non_blocking=True)
 
@@ -234,20 +268,36 @@ def train(gpu, args):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                progress_bar.set_description(f"Epoch {epoch_counter + 1}/{args.epochs}, Loss: {loss.item():.4f}")
+
             # Calculate average loss and accuracy for the epoch
             epoch_loss /= total_step
             epoch_accuracy = 100.0 * correct_predictions / total_predictions
             epoch_losses.append(epoch_loss)
             epoch_accuracies.append(epoch_accuracy)
 
-            print(f"End of epoch {epoch_counter + 1}/{args.epochs}")
-            epoch_counter += 1
-            scheduler.step()
+            batch_size = images.size(0)
+            train_loss_sum += loss.item() * batch_size
+            train_total += batch_size
+            _, pred_top1 = outputs.topk(1, dim=1)
+            train_correct_top1 += (pred_top1.squeeze() == labels).sum().item()
+            _, pred_top5 = outputs.topk(5, dim=1)
+            train_correct_top5 += (pred_top5 == labels.unsqueeze(1)).sum().item()
 
+            train_loss_avg = train_loss_sum / train_total
+            train_top1_acc = train_correct_top1 / train_total
+            train_top5_acc = train_correct_top5 / train_total
+
+            writer.add_scalar('Loss/Train', train_loss_avg, epoch_counter)
+            writer.add_scalar('Accuracy/Top1', train_top1_acc, epoch_counter)
+            writer.add_scalar('Accuracy/Top5', train_top5_acc, epoch_counter)
+
+            #print(f"End of epoch {epoch_counter + 1}/{args.epochs}")
+            epoch_counter += 1
+            epoch_duration = time.time() - epoch_start_time
+            writer.add_scalar('Time/Epoch', epoch_duration, epoch_counter)
             # Save metrics to file after each epoch
-            with open(metrics_filename, "w") as file:
-                json.dump({"losses": epoch_losses, "accuracies": epoch_accuracies}, file)
+            #with open(metrics_filename, "w") as file:
+            #    json.dump({"losses": epoch_losses, "accuracies": epoch_accuracies}, file)
 
         else:
             print("No new data available at this moment. ", loop_check)
@@ -326,6 +376,8 @@ def train(gpu, args):
             
             print('Test Top-1 Error: {:.4f} %'.format(top1_error))
             file.write('Test Top-1 Error: {:.4f} %\n'.format(top1_error))
+    writer.close()
+    
 
 if __name__ == '__main__':
     main()
