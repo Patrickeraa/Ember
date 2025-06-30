@@ -14,6 +14,7 @@ message BatchRequest {
     int32 rank = 2;
     int32 batch_idx = 3;    // Index of the batch requested
     int32 batch_size = 4;   // Size of the batch
+    int32 epoch        = 5;
 }
 
 // Original message for fetching the entire test loader
