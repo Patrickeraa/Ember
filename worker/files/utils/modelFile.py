@@ -54,10 +54,8 @@ class ResNetModel(nn.Module):
 class PretrainedModel(nn.Module):
     def __init__(self, num_classes=15):
         super(PretrainedModel, self).__init__()
-        # Load pretrained ResNet50
         self.resnet = models.resnet18(pretrained=True)
-        
-        # Replace the fully connected layer to match the number of classes
+
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_classes)
 
     def forward(self, x):
@@ -66,13 +64,11 @@ class PretrainedModel(nn.Module):
 class EfficientNetModel(nn.Module):
     def __init__(self, num_classes=15):
         super(EfficientNetModel, self).__init__()
-        # Load pretrained EfficientNet-B0
         self.efficientnet = models.efficientnet_b0(pretrained=True)
-        
-        # Replace the classifier layer to match the number of classes
+
         in_features = self.efficientnet.classifier[1].in_features
         self.efficientnet.classifier = nn.Sequential(
-            nn.Dropout(p=0.2, inplace=True),  # Retain the original dropout
+            nn.Dropout(p=0.2, inplace=True),
             nn.Linear(in_features, num_classes)
         )
 
@@ -82,10 +78,8 @@ class EfficientNetModel(nn.Module):
 class MobileNetV2Model(nn.Module):
     def __init__(self, num_classes=15):
         super(MobileNetV2Model, self).__init__()
-        # Load pretrained MobileNetV2
         self.mobilenet = models.mobilenet_v2(pretrained=True)
-        
-        # Replace the classifier layer to match the number of classes
+
         in_features = self.mobilenet.last_channel
         self.mobilenet.classifier = nn.Sequential(
             nn.Linear(in_features, num_classes)
@@ -121,7 +115,7 @@ class MNISTModel(nn.Module):
     
     def forward(self, x):
         x = self.conv_block(x)
-        x = x.view(x.size(0), -1)  # Flatten
+        x = x.view(x.size(0), -1)
         x = self.fc_block(x)
         return x
     
@@ -129,9 +123,7 @@ class MNISTModel(nn.Module):
 class ImageClassifier(nn.Module):
     def __init__(self, num_classes):
         super(ImageClassifier, self).__init__()
-        # Load pre-trained EfficientNet-B4
         self.backbone = models.efficientnet_b4(pretrained=True)
-        # Replace the classifier head
         self.backbone.classifier = nn.Sequential(
             nn.Dropout(p=0.4),
             nn.Linear(self.backbone.classifier[1].in_features, num_classes)
@@ -209,9 +201,6 @@ class ResNet(nn.Module):
         return x
 
 def resnet18_cifar100():
-    """
-    ResNet-18 architecture customized for CIFAR-100.
-    """
     return ResNet(BasicBlock, [2, 2, 2, 2], num_classes=100)
 
 
@@ -279,32 +268,29 @@ class simpleCIFAR(nn.Module):
     def __init__(self):
         super(simpleCIFAR, self).__init__()
         self.features = nn.Sequential(
-            # Block 1: Input size: [3, 32, 32] -> Output size: [64, 32, 32]
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # Output size: [64, 16, 16]
+            nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # Block 2: Output size: [128, 16, 16] -> After pool: [128, 8, 8]
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # Output size: [128, 8, 8]
+            nn.MaxPool2d(kernel_size=2, stride=2), 
 
-            # Block 3: Output size: [256, 8, 8] -> After pool: [256, 4, 4]
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2)   # Output size: [256, 4, 4]
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
         
         self.classifier = nn.Sequential(
@@ -316,7 +302,6 @@ class simpleCIFAR(nn.Module):
     
     def forward(self, x):
         x = self.features(x)
-        # Flatten for the classifier
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x

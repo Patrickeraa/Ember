@@ -26,6 +26,8 @@ class Args:
         self.nr = config.get('nr', 0)
         self.epochs = config.get('epochs', 10)
         self.world_size = self.gpus * self.nodes
+        self.request_size = config.get('request_size', 10000)
+        self.batch_size = config.get('batch_size', 100)
 
 def set_ambient(json_file):
     with open(json_file, 'r') as f:

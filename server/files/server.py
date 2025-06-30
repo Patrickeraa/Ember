@@ -135,7 +135,7 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
             data = []
             for tensor_img, label in batch:
                 buf = io.BytesIO()
-                # serializa o tensor (inclui dtype e shape)
+
                 torch.save(tensor_img, buf)
                 data.append((buf.getvalue(), label))
 

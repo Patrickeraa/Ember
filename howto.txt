@@ -91,6 +91,8 @@ docker cp /home/paraujo/GRPC/worker/files grworker1:/workspace
 python ember_train.py --config ./config/config1.json
 python ember_async_train.py --config ./config/config1.json
 python ember_async_tensor.py --config ./config/config1.json
+python ember_async.py --config ./config/config1.json
+python ember_hope.py --config ./config/config1.json
 
 -- tests
 python ember_train_GPU.py --config ./config/config1.json

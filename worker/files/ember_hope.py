@@ -20,7 +20,7 @@ from utils import ember, modelFile, monitoring
 import queue
 from PIL import Image
 import numpy as np
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, IterableDataset
 import time
 from sklearn.metrics import accuracy_score
 import json
@@ -45,6 +45,58 @@ batch_queue = queue.Queue()
 all_images = []
 all_labels = []
 new_data_available = False
+
+class RPCIterableDataset(IterableDataset):
+    """
+    IterableDataset that pulls samples in background from a gRPC service.
+    """
+    def __init__(self, api_host, api_port, world_size, rank, request_size=10000):
+        self.api_host = api_host
+        self.api_port = api_port
+        self.world_size = world_size
+        self.rank = rank
+        self.request_size = request_size
+
+    def fetch_loop(self, queue):
+        max_msg = 1000 * 1024 * 1024
+        channel = grpc.insecure_channel(
+            f"{self.api_host}:{self.api_port}",
+            options=[
+                ('grpc.max_send_message_length', max_msg),
+                ('grpc.max_receive_message_length', max_msg),
+            ]
+        )
+        stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
+        batch_idx = 0
+
+        while True:
+            req = dist_data_pb2.BatchRequest(
+                num_replicas=self.world_size,
+                rank=self.rank,
+                batch_idx=batch_idx,
+                batch_size=self.request_size
+            )
+            resp = stub.GetBatch(req)
+            if not resp.data:
+                break
+            raw = pickle.loads(resp.data)
+            for tensor_bytes, label_data in raw:
+                buf = io.BytesIO(tensor_bytes)
+                img = torch.load(buf)
+                lbl = torch.tensor(label_data, dtype=torch.long)
+                queue.put((img, lbl))
+            batch_idx += 1
+        queue.put(None)
+
+    def __iter__(self):
+        q = queue.Queue(maxsize=2 * self.request_size)
+        thread = threading.Thread(target=self.fetch_loop, args=(q,), daemon=True)
+        thread.start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield item
 
 
 def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
@@ -151,137 +203,68 @@ def main():
 
 def train(gpu, args):
     rank = args.nr * args.gpus + gpu
-
-    dist.init_process_group(backend='nccl', init_method='env://', world_size=args.world_size, rank=rank)
-
-    torch.manual_seed(0)
-    model = modelFile.getModel()
+    dist.init_process_group(backend='nccl', init_method='env://',
+                            world_size=args.world_size, rank=rank)
     torch.cuda.set_device(gpu)
-    model.cuda(gpu)
-    batch_size = 100
+
+    model = modelFile.getModel().cuda(gpu)
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
     criterion = nn.CrossEntropyLoss().cuda(gpu)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
 
-    print("--------- TRAINING STATUS --------")
-    print("World Size: ", args.world_size)
-    print("Number of GPU's: ", args.gpus)
-    print("Machine Rank: ", args.nr)
-    print("Number of Epochs in the Training: ", args.epochs)
-    print("Number of Nodes: ", args.nodes)
-    print("----------------------------------")
+    # Streaming dataset and loader
     api_host = "grserver"  
     api_port = 8040
+    request_size = args.request_size
+    train_batch = args.batch_size
 
-    epoch_counter = 0
-    global new_data_available
-    loop_check = 0
+    dataset = RPCIterableDataset(api_host, api_port, args.world_size, rank, request_size)
+    loader = DataLoader(dataset,
+                        batch_size=train_batch,
+                        num_workers=0,
+                        drop_last=False,
+                        pin_memory=True)
 
-    epoch_losses = []
-    epoch_accuracies = []
-
-    metrics_filename = "async_metrics.json"
     writer = SummaryWriter(log_dir="runs/async")
+    epoch_losses, epoch_accs = [], []
 
-    while epoch_counter < args.epochs:
-        end_data_flag = False
-        fetch_thread = threading.Thread(
-            target=fetch_batches_in_thread, 
-            args=(api_host, api_port, args.world_size, rank)
-        )
-        fetch_thread.start()
-        data_part_counter = 0
-
-        while not end_data_flag:
-            dataloader, sampler = create_dataloader_from_queue(batch_queue, args.world_size, rank, batch_size=batch_size)
-            new_data_available = False
-
-            if len(dataloader) > 0:
-                # ---------------------- ALLREDUCE STEP -----------------------------
-                epoch_start_time = time.time()
-                local_batch_count = len(dataloader)
-                local_batch_count_tensor = torch.tensor(
-                    local_batch_count, dtype=torch.int, device=torch.device(f'cuda:{gpu}')
-                )
-                min_batch_count_tensor = local_batch_count_tensor.clone()
-                dist.all_reduce(min_batch_count_tensor, op=dist.ReduceOp.MIN)
-                min_batch_count = min_batch_count_tensor.item()
-                if local_batch_count != min_batch_count:
-                    truncated_batches = []
-                    for i, batch in enumerate(dataloader):
-                        if i >= min_batch_count:
-                            break
-                        truncated_batches.append(batch)
-                else:
-                    truncated_batches = dataloader
-                # -------------------------------------------------------------------
-                #print("Allreduce in: ", datetime.now() - start)
-                #print(f"Epoch {epoch_counter + 1}/{args.epochs}, Min Batch Count Across Nodes: {min_batch_count}")
-                total_step = len(truncated_batches)
-
-                # metricas
-                epoch_loss = 0
-                correct_predictions = 0
-                total_predictions = 0
-                train_loss_sum = 0.0
-                train_total = 0
-                train_correct_top1 = 0
-                train_correct_top5 = 0
-
-                sampler.set_epoch(epoch_counter)
-                print(f"Data part {data_part_counter + 1}/{args.nodes}")
-
-                # iterando pelos batches tirados da fila
-                for images, labels in tqdm(truncated_batches, desc=f"Train Epoch {epoch_counter}"):
-                    images = images.cuda(non_blocking=True)
-                    labels = labels.cuda(non_blocking=True)
-
-                    outputs = model(images)
-                    loss = criterion(outputs, labels)
-                    epoch_loss += loss.item() 
-
-                    _, predicted = outputs.max(1)
-                    correct_predictions += predicted.eq(labels).sum().item()
-                    total_predictions += labels.size(0)
-
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-
-                epoch_loss /= total_step
-                epoch_accuracy = 100.0 * correct_predictions / total_predictions
-                epoch_losses.append(epoch_loss)
-                epoch_accuracies.append(epoch_accuracy)
-
-                train_loss_sum += loss.item() * batch_size
-                train_total += batch_size
-                _, pred_top1 = outputs.topk(1, dim=1)
-                train_correct_top1 += (pred_top1.squeeze() == labels).sum().item()
-                _, pred_top5 = outputs.topk(5, dim=1)
-                train_correct_top5 += (pred_top5 == labels.unsqueeze(1)).sum().item()
-
-                train_loss_avg = train_loss_sum / train_total
-                train_top1_acc = train_correct_top1 / train_total
-                train_top5_acc = train_correct_top5 / train_total
-
-                writer.add_scalar('Loss/Train', train_loss_avg, epoch_counter)
-                writer.add_scalar('Accuracy/Top1', train_top1_acc, epoch_counter)
-                writer.add_scalar('Accuracy/Top5', train_top5_acc, epoch_counter)
-                epoch_duration = time.time() - epoch_start_time
-                writer.add_scalar('Time/Epoch', epoch_duration, epoch_counter)
-                data_part_counter += 1
+    for epoch in range(args.epochs):
+        start_t = time.time()
+        epoch_loss = 0.0
+        correct = 0
+        total = 0
+        batch_count = 0
 
 
-            else:
-                if not fetch_thread.is_alive():
-                    end_data_flag = True
-                    loop_check = 0
-                    fetch_thread.join()
-                    epoch_counter += 1
-                    break
+        for images, labels in tqdm(loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
+            images = images.cuda(gpu, non_blocking=True)
+            labels = labels.cuda(gpu, non_blocking=True)
 
-                loop_check += 1
-                #time.sleep(0.01)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            _, preds = outputs.max(1)
+            correct += preds.eq(labels).sum().item()
+            total += labels.size(0)
+            batch_count += 1
+
+        avg_loss = epoch_loss / batch_count
+        acc = 100.0 * correct / total
+        epoch_time = time.time() - start_t
+
+        writer.add_scalar('Loss/Train', avg_loss, epoch)
+        writer.add_scalar('Accuracy/Train', acc, epoch)
+        writer.add_scalar('Time/Epoch', epoch_time, epoch)
+
+        print(f"Epoch {epoch+1}: loss={avg_loss:.4f}, acc={acc:.2f}%, time={epoch_time:.1f}s")
+
+    writer.close()
+
     if gpu == 0:
         print("Training complete")
     if rank == 0:

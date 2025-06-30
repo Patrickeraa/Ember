@@ -2,5 +2,7 @@
     "nodes": 2,
     "gpus": 1,
     "nr": 0,
-    "epochs": 50
+    "epochs": 20,
+    "request_size": 1000,
+    "batch_size": 100
 }
