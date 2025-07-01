@@ -48,16 +48,23 @@ new_data_available = False
 
 class RPCIterableDataset(IterableDataset):
     """
-    IterableDataset that pulls samples in background from a gRPC service.
+    IterableDataset que puxa amostras em background de um serviço gRPC.
+    Suporta shuffle/sharding no servidor via epoch + DistributedSampler.
     """
     def __init__(self, api_host, api_port, world_size, rank, request_size=10000):
-        self.api_host = api_host
-        self.api_port = api_port
-        self.world_size = world_size
-        self.rank = rank
+        self.api_host     = api_host
+        self.api_port     = api_port
+        self.world_size   = world_size
+        self.rank         = rank
         self.request_size = request_size
+        # novo atributo para controlar o epoch
+        self.current_epoch = 0
 
-    def fetch_loop(self, queue):
+    def set_epoch(self, epoch: int):
+        """Deve ser chamado antes de __iter__ em cada época."""
+        self.current_epoch = epoch
+
+    def fetch_loop(self, output_queue):
         max_msg = 1000 * 1024 * 1024
         channel = grpc.insecure_channel(
             f"{self.api_host}:{self.api_port}",
@@ -70,28 +77,34 @@ class RPCIterableDataset(IterableDataset):
         batch_idx = 0
 
         while True:
+            # passa também o epoch
             req = dist_data_pb2.BatchRequest(
                 num_replicas=self.world_size,
                 rank=self.rank,
                 batch_idx=batch_idx,
-                batch_size=self.request_size
+                batch_size=self.request_size,
+                epoch=self.current_epoch,    # <- aqui
             )
             resp = stub.GetBatch(req)
             if not resp.data:
                 break
+
             raw = pickle.loads(resp.data)
             for tensor_bytes, label_data in raw:
                 buf = io.BytesIO(tensor_bytes)
                 img = torch.load(buf)
                 lbl = torch.tensor(label_data, dtype=torch.long)
-                queue.put((img, lbl))
+                output_queue.put((img, lbl))
+
             batch_idx += 1
-        queue.put(None)
+
+        output_queue.put(None)
 
     def __iter__(self):
         q = queue.Queue(maxsize=2 * self.request_size)
         thread = threading.Thread(target=self.fetch_loop, args=(q,), daemon=True)
         thread.start()
+
         while True:
             item = q.get()
             if item is None:

@@ -114,40 +114,43 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         return dataset
     
     def GetBatch(self, request, context):
-        try:
-            rank = request.rank
-            num_replicas = request.num_replicas
-            batch_idx = request.batch_idx
-            batch_size = request.batch_size
+        rank         = request.rank
+        num_replicas = request.num_replicas
+        batch_idx    = request.batch_idx
+        batch_size   = request.batch_size
+        epoch        = request.epoch
 
-            start = datetime.now()
+        # 1) Cria sampler novo para cada chamada (ou armazene e apenas atualize o epoch)
+        sampler = DistributedSampler(
+            dataset=self.dataset,
+            num_replicas=num_replicas,
+            rank=rank,
+            shuffle=True,
+            drop_last=False
+        )
+        sampler.set_epoch(epoch)
 
-            start_idx = batch_idx * batch_size
-            end_idx = min(start_idx + batch_size, len(self.dataset))
+        # 2) Recupera a lista completa de índices já embaralhada
+        all_indices = list(sampler)
 
-            if start_idx >= len(self.dataset):
-                print(f"All batches sent to client {rank}")
-                return dist_data_pb2.TrainLoaderResponse(data=b"")
+        # 3) Corta o pedaço certo
+        start = batch_idx * batch_size
+        end   = min(start + batch_size, len(all_indices))
+        if start >= len(all_indices):
+            return dist_data_pb2.TrainLoaderResponse(data=b"")
 
-            print(f"Serving batch {batch_idx} for rank {rank}: {start_idx} to {end_idx}")
-            batch = [self.dataset[i] for i in range(start_idx, end_idx)]
+        batch_indices = all_indices[start:end]
 
-            data = []
-            for tensor_img, label in batch:
-                buf = io.BytesIO()
+        # 4) Empacota e envia
+        data = []
+        for idx in batch_indices:
+            tensor_img, label = self.dataset[idx]
+            buf = io.BytesIO()
+            torch.save(tensor_img, buf)
+            data.append((buf.getvalue(), label))
 
-                torch.save(tensor_img, buf)
-                data.append((buf.getvalue(), label))
-
-            response_data = pickle.dumps(data)
-            print("Batch sent in: " + str(datetime.now() - start))
-            return dist_data_pb2.TrainLoaderResponse(data=response_data)
-
-        except Exception as e:
-            context.set_details(f"Error: {str(e)}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            print(f"Error serving batch {batch_idx} for rank {rank}: {str(e)}")
-            raise
+        response_data = pickle.dumps(data)
+        return dist_data_pb2.TrainLoaderResponse(data=response_data)
         
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10),
