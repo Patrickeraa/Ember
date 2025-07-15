@@ -24,12 +24,10 @@ from torch.utils.data import DataLoader, TensorDataset, IterableDataset
 import time
 from sklearn.metrics import accuracy_score
 import json
-from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import TensorDataset, DataLoader, DistributedSampler
 
 
 def calculate_top_k_accuracy(outputs, labels, k=1):
-    """Compute Top-k accuracy for the given outputs and labels."""
     _, top_k_predictions = outputs.topk(k, dim=1, largest=True, sorted=True)
     correct = top_k_predictions.eq(labels.view(-1, 1).expand_as(top_k_predictions))
     return correct.any(dim=1).float().sum().item()
@@ -47,21 +45,15 @@ all_labels = []
 new_data_available = False
 
 class RPCIterableDataset(IterableDataset):
-    """
-    IterableDataset que puxa amostras em background de um serviço gRPC.
-    Suporta shuffle/sharding no servidor via epoch + DistributedSampler.
-    """
     def __init__(self, api_host, api_port, world_size, rank, request_size=10000):
         self.api_host     = api_host
         self.api_port     = api_port
         self.world_size   = world_size
         self.rank         = rank
         self.request_size = request_size
-        # novo atributo para controlar o epoch
         self.current_epoch = 0
 
     def set_epoch(self, epoch: int):
-        """Deve ser chamado antes de __iter__ em cada época."""
         self.current_epoch = epoch
 
     def fetch_loop(self, output_queue):
@@ -77,13 +69,12 @@ class RPCIterableDataset(IterableDataset):
         batch_idx = 0
 
         while True:
-            # passa também o epoch
             req = dist_data_pb2.BatchRequest(
                 num_replicas=self.world_size,
                 rank=self.rank,
                 batch_idx=batch_idx,
                 batch_size=self.request_size,
-                epoch=self.current_epoch,    # <- aqui
+                epoch=self.current_epoch,
             )
             resp = stub.GetBatch(req)
             if not resp.data:
@@ -151,7 +142,6 @@ def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
         batch_idx += 1
 
 def create_dataloader_from_queue(batch_queue, num_replicas, rank, batch_size=100):
-    # buffer persistente
     if not hasattr(create_dataloader_from_queue, "images"):
         create_dataloader_from_queue.images = []
         create_dataloader_from_queue.labels = []
@@ -207,10 +197,6 @@ def main():
 
     mp.spawn(train, nprocs=args.gpus, args=(args,))
 
-    with open("gpu_utilization_async.csv", "w") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Time", "GPU_ID", "Utilization"])
-        writer.writerows(gpu_data)
     print("Training complete in: " + str(datetime.now() - start))
 
 
@@ -238,7 +224,6 @@ def train(gpu, args):
                         drop_last=False,
                         pin_memory=True)
 
-    writer = SummaryWriter(log_dir="runs/async")
     epoch_losses, epoch_accs = [], []
 
     for epoch in range(args.epochs):
@@ -270,13 +255,9 @@ def train(gpu, args):
         acc = 100.0 * correct / total
         epoch_time = time.time() - start_t
 
-        writer.add_scalar('Loss/Train', avg_loss, epoch)
-        writer.add_scalar('Accuracy/Train', acc, epoch)
-        writer.add_scalar('Time/Epoch', epoch_time, epoch)
-
         print(f"Epoch {epoch+1}: loss={avg_loss:.4f}, acc={acc:.2f}%, time={epoch_time:.1f}s")
 
-    writer.close()
+
 
     if gpu == 0:
         print("Training complete")
@@ -349,7 +330,7 @@ def train(gpu, args):
             
             print('Test Top-1 Error: {:.4f} %'.format(top1_error))
             file.write('Test Top-1 Error: {:.4f} %\n'.format(top1_error))
-    writer.close()
+
     
 
 if __name__ == '__main__':

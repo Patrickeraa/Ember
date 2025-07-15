@@ -95,6 +95,8 @@ python ember_async_train.py --config ./config/config1.json
 python ember_async_tensor.py --config ./config/config1.json
 python ember_async.py --config ./config/config1.json
 python ember_hope.py --config ./config/config1.json
+python ember_data.py --config ./config/config1.json
+python ember_wandb.py --config ./config/config1.json
 
 -- tests
 python ember_train_GPU.py --config ./config/config1.json
@@ -149,3 +151,8 @@ sudo docker compose up -d --shm-size=8g
 
 
 
+
+
+ITERABLE TESTS
+sudo docker cp grworker2:/workspace/files/ember_runs /home/patrick.araujo/
+scp -r patrick.araujo@200.131.223.221:/home/patrick.araujo/ember_runs /home/ubuntrick/Codedepot/Iterable_Results

@@ -120,7 +120,6 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         batch_size   = request.batch_size
         epoch        = request.epoch
 
-        # 1) Cria sampler novo para cada chamada (ou armazene e apenas atualize o epoch)
         sampler = DistributedSampler(
             dataset=self.dataset,
             num_replicas=num_replicas,
@@ -130,10 +129,8 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
         )
         sampler.set_epoch(epoch)
 
-        # 2) Recupera a lista completa de índices já embaralhada
         all_indices = list(sampler)
 
-        # 3) Corta o pedaço certo
         start = batch_idx * batch_size
         end   = min(start + batch_size, len(all_indices))
         if start >= len(all_indices):
@@ -141,7 +138,6 @@ class TrainLoaderService(dist_data_pb2_grpc.TrainLoaderServiceServicer):
 
         batch_indices = all_indices[start:end]
 
-        # 4) Empacota e envia
         data = []
         for idx in batch_indices:
             tensor_img, label = self.dataset[idx]
