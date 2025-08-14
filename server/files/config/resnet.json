@@ -10,11 +10,11 @@
         },
         {
               "name": "Resize",
-              "args": [64, 64]
+              "args": [224, 224]
         }
     ],
     "dataset_path": {
-        "train": "/workspace/dataset/tiny-imagenet-200/train",
-        "test": "/workspace/dataset/tiny-imagenet-200/test"
+        "train": "/workspace/datasets/vegetable/train",
+        "test": "/workspace/datasets/vegetable/test"
     }
   }

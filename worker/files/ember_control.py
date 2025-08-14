@@ -18,11 +18,6 @@ import pickle
 import io
 from rpc import dist_data_pb2, dist_data_pb2_grpc
 from utils import ember, modelFile
-from torch.utils.tensorboard import SummaryWriter
-import pynvml
-from pyinstrument import Profiler
-from torch.profiler import profile, record_function, ProfilerActivity, schedule
-from torch.profiler import tensorboard_trace_handler
 
 
 def main():

@@ -39,7 +39,6 @@ import csv
 import time 
 import pynvml
 
-batch_queue = queue.Queue()
 all_images = []
 all_labels = []
 new_data_available = False
@@ -102,91 +101,6 @@ class RPCIterableDataset(IterableDataset):
                 break
             yield item
 
-
-def fetch_batches_in_thread(api_host, api_port, num_replicas, rank):
-    global new_data_available
-    max_msg = 1000 * 1024 * 1024
-    channel = grpc.insecure_channel(
-        f'{api_host}:{api_port}',
-        options=[
-            ('grpc.max_send_message_length', max_msg),
-            ('grpc.max_receive_message_length', max_msg)
-        ]
-    )
-    stub = dist_data_pb2_grpc.TrainLoaderServiceStub(channel)
-    batch_idx = 0
-    while True:
-        request = dist_data_pb2.BatchRequest(
-            num_replicas=num_replicas,
-            rank=rank,
-            batch_idx=batch_idx,
-            batch_size=10000
-        )
-        response = stub.GetBatch(request)
-
-        if not response.data:
-            batch_queue.put(None)
-            break
-
-        raw = pickle.loads(response.data)
-        converted_batch = []
-        for tensor_bytes, label_data in raw:
-            buf = io.BytesIO(tensor_bytes)
-
-            img_tensor = torch.load(buf)
-            label_tensor = torch.tensor(label_data)
-            converted_batch.append((img_tensor, label_tensor))
-
-        batch_queue.put(converted_batch)
-        new_data_available = True
-        batch_idx += 1
-
-def create_dataloader_from_queue(batch_queue, num_replicas, rank, batch_size=100):
-    if not hasattr(create_dataloader_from_queue, "images"):
-        create_dataloader_from_queue.images = []
-        create_dataloader_from_queue.labels = []
-
-
-    while True:
-        try:
-            batch = batch_queue.get_nowait()
-        except queue.Empty:
-            break
-
-        if batch is None:
-            break
-        for img_tensor, label_tensor in batch:
-            create_dataloader_from_queue.images.append(img_tensor)
-            create_dataloader_from_queue.labels.append(label_tensor)
-
-    if create_dataloader_from_queue.images:
-        images_tensor = torch.stack(create_dataloader_from_queue.images)
-        labels_tensor = torch.stack(create_dataloader_from_queue.labels)
-    else:
-        images_tensor = torch.empty((0, 3, 32, 32))
-        labels_tensor = torch.empty((0,), dtype=torch.long)
-
-    # tira os itens da fila
-    create_dataloader_from_queue.images.clear()
-    create_dataloader_from_queue.labels.clear()
-
-    dataset = TensorDataset(images_tensor, labels_tensor)
-    sampler = DistributedSampler(
-        dataset,
-        num_replicas=num_replicas,
-        rank=rank,
-        shuffle=True,
-        drop_last=False
-    )
-    dataloader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        sampler=sampler,
-        num_workers=0
-    )
-
-    return dataloader, sampler
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to the JSON configuration file')
@@ -216,15 +130,13 @@ def train(gpu, args):
     api_port = 8040
     request_size = args.request_size
     train_batch = args.batch_size
-
-    dataset = RPCIterableDataset(api_host, api_port, args.world_size, rank, request_size)
+    print(f"REQUEST SIZE: {request_size}")
+    dataset = RPCIterableDataset(api_host=api_host, api_port=api_port, world_size=args.world_size, rank=rank, request_size=request_size)
     loader = DataLoader(dataset,
                         batch_size=train_batch,
                         num_workers=0,
                         drop_last=False,
                         pin_memory=True)
-
-    epoch_losses, epoch_accs = [], []
 
     for epoch in range(args.epochs):
         start_t = time.time()
@@ -250,14 +162,6 @@ def train(gpu, args):
             correct += preds.eq(labels).sum().item()
             total += labels.size(0)
             batch_count += 1
-
-        avg_loss = epoch_loss / batch_count
-        acc = 100.0 * correct / total
-        epoch_time = time.time() - start_t
-
-        print(f"Epoch {epoch+1}: loss={avg_loss:.4f}, acc={acc:.2f}%, time={epoch_time:.1f}s")
-
-
 
     if gpu == 0:
         print("Training complete")

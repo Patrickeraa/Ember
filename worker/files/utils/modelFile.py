@@ -7,7 +7,7 @@ import torch.nn.functional as F
 # Put the model you want to train in this file and then it's name on the return bellow (line 10)
 # remember to put any extra information needed inside the model parameters or manually set them on the class
 def getModel():
-    return simpleCIFAR();
+    return MNISTModel();
 
 class ConvNet(nn.Module):
     def __init__(self, num_classes=10):

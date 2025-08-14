@@ -94,9 +94,9 @@ python ember_train.py --config ./config/config1.json
 python ember_async_train.py --config ./config/config1.json
 python ember_async_tensor.py --config ./config/config1.json
 python ember_async.py --config ./config/config1.json
-python ember_hope.py --config ./config/config1.json
+python ember_iterable.py --config ./config/config1.json
 python ember_data.py --config ./config/config1.json
-python ember_wandb.py --config ./config/config1.json
+python ember_profiler.py --config ./config/config1.json
 
 -- tests
 python ember_train_GPU.py --config ./config/config1.json
