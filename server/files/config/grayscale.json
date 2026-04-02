@@ -19,6 +19,9 @@
   ],
   "dataset_path": {
       "train": "/workspace/datasets/MNIST/train",
-      "test": "/workspace/datasets/MNIST/test"
-  }
+      "test": "/workspace/datasets/MNIST/test",
+      "val": "/workspace/datasets/MNIST/val"
+  },
+  "validation": false,
+  "data_type": "image"
 }

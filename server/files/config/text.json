@@ -13,6 +13,5 @@
         "train": "/workspace/datasets/CIFAR10/train",
         "test": "/workspace/datasets/CIFAR10/test"
     },
-    "validation": false,
-    "data_type": "image"
+    "data_type": "text"
   }

@@ -1,0 +1,73 @@
+import os
+import io
+import pickle
+import torch
+from torch.utils.data import Dataset, DistributedSampler
+from torchvision import transforms
+from torchvision.datasets import ImageFolder
+import dist_data_pb2
+import grpc
+import ember_server
+import json
+transform_json = {}
+
+
+def get_custom_dataset_json(self, train=True):
+        transform = ember_server.parse_transform(transform_json['transforms'])
+        dataset_path = transform_json['dataset_path']['train'] if train else transform_json['dataset_path']['test']
+        print(f"Loading dataset from {dataset_path}")
+        dataset = ImageFolder(root=dataset_path, transform=transform)
+        class_names = dataset.classes
+        num_classes = len(class_names)
+        
+        print(f"Number of classes: {num_classes}")
+        print(f"Class names: {class_names}")
+        return dataset
+    
+def get_custom_dataset(self, train=True):
+        transform = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5]),
+            transforms.Resize((256, 256))
+        ])
+        dataset_path = "/workspace/dataset/MNIST/train" if train else "/workspace/dataset/MNIST/test"
+
+        dataset = ImageFolder(root=dataset_path, transform=transform)
+        print(f"Total number of samples in the {'train' if train else 'test'} dataset: {len(dataset)}")
+        return dataset
+    
+def GetBatch(self, request, context):
+        rank         = request.rank
+        num_replicas = request.num_replicas
+        batch_idx    = request.batch_idx
+        batch_size   = request.batch_size
+        epoch        = request.epoch
+
+        sampler = DistributedSampler(
+            dataset=self.dataset,
+            num_replicas=num_replicas,
+            rank=rank,
+            shuffle=True,
+            drop_last=False
+        )
+        sampler.set_epoch(epoch)
+
+        all_indices = list(sampler)
+
+        start = batch_idx * batch_size
+        end   = min(start + batch_size, len(all_indices))
+        if start >= len(all_indices):
+            return dist_data_pb2.TrainLoaderResponse(data=b"")
+
+        batch_indices = all_indices[start:end]
+
+        data = []
+        for idx in batch_indices:
+            tensor_img, label = self.dataset[idx]
+            buf = io.BytesIO()
+            torch.save(tensor_img, buf)
+            data.append((buf.getvalue(), label))
+
+        response_data = pickle.dumps(data)
+        return dist_data_pb2.TrainLoaderResponse(data=response_data)

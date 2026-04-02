@@ -19,6 +19,8 @@ import io
 from rpc import dist_data_pb2, dist_data_pb2_grpc
 
 
+
+
 class Args:
     def __init__(self, config):
         self.nodes = config.get('nodes', 1)
@@ -28,6 +30,10 @@ class Args:
         self.world_size = self.gpus * self.nodes
         self.request_size = config.get('request_size', 10000)
         self.batch_size = config.get('batch_size', 100)
+        self.checkpoint_save = config.get('checkpoint_save', False)
+        self.checkpoint_load = config.get('checkpoint_load', False)
+        self.checkpoint_dir = config.get('checkpoint_dir', '/workspace/checkpoints')
+
 
 def set_ambient(json_file):
     with open(json_file, 'r') as f:

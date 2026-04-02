@@ -20,10 +20,36 @@ from rpc import dist_data_pb2, dist_data_pb2_grpc
 from utils import ember, modelFile
 from torch.utils.tensorboard import SummaryWriter
 import pynvml
-from pyinstrument import Profiler
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 from torch.profiler import tensorboard_trace_handler
+import psutil
+import threading
+import csv
 
+def get_process_memory():
+    """
+    Retorna (rss_bytes, total_virtual_bytes_or_None, percent_used_or_None).
+    Usa psutil se disponível; senão tenta /proc/self/status; senão resource.ru_maxrss.
+    """
+    try:
+        p = psutil.Process(os.getpid())
+        mem = p.memory_info().rss
+        vm = psutil.virtual_memory()
+        return mem, vm.total, vm.percent
+    except Exception:
+        # fallback Linux /proc
+        try:
+            with open('/proc/self/status', 'r') as f:
+                for line in f:
+                    if line.startswith('VmRSS:'):
+                        parts = line.split()
+                        rss_kb = int(parts[1])
+                        return rss_kb * 1024, None, None
+        except Exception:
+            import resource
+            ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # ru_maxrss pode estar em KB ou bytes dependendo do SO; multiplicar por 1024 costuma funcionar
+            return int(ru) * 1024, None, None
 
 def main():
     parser = argparse.ArgumentParser()
@@ -70,6 +96,34 @@ def train(gpu, args):
     print("----------------------------------\n")
 
 
+    mem_interval = getattr(args, 'mem_monitor_interval', 1.0)  # segundos entre amostras contínuas
+    mem_csv_path = getattr(args, 'mem_csv_path', f"nostream_profile_rank{rank}.csv")
+    mem_samples = []   # lista de dicionários {timestamp, type, epoch, batch_idx, rss_bytes, ...}
+    stop_monitor = threading.Event()
+
+    # monitor thread: amostras periódicas independentes do batch
+    def monitor_loop():
+        while not stop_monitor.is_set():
+            ts = time.time()
+            rss, vtotal, vpercent = get_process_memory()
+            mem_samples.append({
+                'timestamp': ts,
+                'type': 'sample',
+                'epoch': None,
+                'batch_idx': None,
+                'rss_bytes': rss,
+                'vm_total': vtotal,
+                'vm_percent': vpercent,
+                'rank': rank,
+                'pid': os.getpid()
+            })
+            # aguarda com timeout para permitir término rápido
+            stop_monitor.wait(mem_interval)
+
+    monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
+    monitor_thread.start()
+
+
     for epoch in range(args.epochs):
         epoch_start_time = time.time()
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{args.epochs}", leave=False)
@@ -79,44 +133,31 @@ def train(gpu, args):
         train_total = 0
         train_correct_top1 = 0
         train_correct_top5 = 0
-
-        times_data     = []
-        times_forward  = []
-        times_loss     = []
-        times_backward = []
-        times_step     = []
         for i, (images, labels) in enumerate(progress_bar):
-            t0 = time.time()
+            ts = time.time()
+            rss, vtotal, vpercent = get_process_memory()
+            mem_samples.append({
+                'timestamp': ts,
+                'type': 'after_batch_received',
+                'epoch': epoch,
+                'batch_idx': i,
+                'rss_bytes': rss,
+                'vm_total': vtotal,
+                'vm_percent': vpercent,
+                'rank': rank,
+                'pid': os.getpid()
+            })
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
-            t1 = time.time()
-            times_data.append(t1 - t0)
 
             # Forward pass
-            t0 = time.time()
             outputs = model(images)
-            t1 = time.time()
-            times_forward.append(t1 - t0)
-
-            t0 = time.time()
             loss = criterion(outputs, labels)
-            t1 = time.time()
-            times_loss.append(t1 - t0)
-
 
             # Backward and optimize
-            t0 = time.time()
             optimizer.zero_grad()
             loss.backward()
-            t1 = time.time()
-            times_backward.append(t1 - t0)
-
-
-            t0 = time.time()
             optimizer.step()
-            t1 = time.time()
-            times_step.append(t1 - t0)
-
             
             batch_size = images.size(0)
             train_loss_sum += loss.item() * batch_size
@@ -137,30 +178,35 @@ def train(gpu, args):
             epoch_duration = time.time() - epoch_start_time
             writer.add_scalar('Time/Epoch', epoch_duration, epoch)
             progress_bar.set_description(f"Epoch {epoch + 1}/{args.epochs}, Loss: {loss.item():.4f}")
-
-    import numpy as np
-    avg_data     = np.mean(times_data)
-    std_data     = np.std(times_data)
-    avg_forward  = np.mean(times_forward)
-    std_forward  = np.std(times_forward)
-    avg_loss     = np.mean(times_loss)
-    std_loss     = np.std(times_loss)
-    avg_backward = np.mean(times_backward)
-    std_backward = np.std(times_backward)
-    avg_step     = np.mean(times_step)
-    std_step     = np.std(times_step)
-
-    # Caminho do arquivo de saída
-    timings_path = os.path.join("/workspace", "timings_ember.txt")
-    with open(timings_path, "w") as f:
-        f.write("=== Médias de Tempo por Etapa (s) ===\n")
-        f.write(f"Data transfer     : {avg_data:.6f} ± {std_data:.6f}\n")
-        f.write(f"Forward           : {avg_forward:.6f} ± {std_forward:.6f}\n")
-        f.write(f"Loss computation  : {avg_loss:.6f} ± {std_loss:.6f}\n")
-        f.write(f"Backward          : {avg_backward:.6f} ± {std_backward:.6f}\n")
-        f.write(f"Optimizer step    : {avg_step:.6f} ± {std_step:.6f}\n")
     writer.close()
+    stop_monitor.set()
+    monitor_thread.join(timeout=5.0)
 
+    # escrever csv (ordenando por timestamp)
+    mem_samples.sort(key=lambda x: x['timestamp'])
+    csv_fields = ['timestamp', 'iso_time', 'rank', 'pid', 'type', 'epoch', 'batch_idx',
+                  'rss_bytes', 'rss_mb', 'vm_total', 'vm_total_gb', 'vm_percent']
+    with open(mem_csv_path, mode='w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=csv_fields)
+        writer.writeheader()
+        for s in mem_samples:
+            iso = datetime.utcfromtimestamp(s['timestamp']).isoformat() + 'Z'
+            rss_mb = round(s['rss_bytes'] / (1024**2), 3) if s['rss_bytes'] is not None else None
+            vm_total_gb = round(s['vm_total'] / (1024**3), 3) if s.get('vm_total') else None
+            writer.writerow({
+                'timestamp': s['timestamp'],
+                'iso_time': iso,
+                'rank': s['rank'],
+                'pid': s['pid'],
+                'type': s['type'],
+                'epoch': s['epoch'],
+                'batch_idx': s['batch_idx'],
+                'rss_bytes': s['rss_bytes'],
+                'rss_mb': rss_mb,
+                'vm_total': s.get('vm_total'),
+                'vm_total_gb': vm_total_gb,
+                'vm_percent': s.get('vm_percent')
+            })
     print("Training complete in: " + str(datetime.now() - train_start))
     if gpu == 0:
         print("Training complete")

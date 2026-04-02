@@ -2,7 +2,14 @@
     "nodes": 2,
     "gpus": 1,
     "nr": 0,
-    "epochs": 5,
+    "epochs": 2,
     "request_size": 500,
-    "batch_size": 100
+    "batch_size": 100,
+    "master_addr": "worker1",
+    "master_port": 8888,
+    "checkpoint_save": false,
+    "checkpoint_load": false,
+    "checkpoint_dir": "/workspace/checkpoints"
 }
+
+

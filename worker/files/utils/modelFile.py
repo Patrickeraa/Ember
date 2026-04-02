@@ -264,10 +264,11 @@ class CIFAR100ResNet(nn.Module):
 def ResNetCIFAR(num_classes=100):
     return CIFAR100ResNet(BasicBlock, [2, 2, 2, 2], num_classes=num_classes)
 
-class simpleCIFAR(nn.Module):
+class CIFAR10Model(nn.Module):
     def __init__(self):
-        super(simpleCIFAR, self).__init__()
+        super(CIFAR10Model, self).__init__()
         self.features = nn.Sequential(
+
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
@@ -282,7 +283,7 @@ class simpleCIFAR(nn.Module):
             nn.Conv2d(128, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2), 
+            nn.MaxPool2d(kernel_size=2, stride=2),
 
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
@@ -290,7 +291,7 @@ class simpleCIFAR(nn.Module):
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.MaxPool2d(kernel_size=2, stride=2) 
         )
         
         self.classifier = nn.Sequential(

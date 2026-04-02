@@ -18,7 +18,7 @@ import io
 import grpc
 import pickle
 from rpc import dist_data_pb2, dist_data_pb2_grpc
-from utils import ember, modelFile, monitoring
+from utils import ember, modelFile, monitoring, model_wrapper
 import queue
 from PIL import Image
 import numpy as np
@@ -27,6 +27,10 @@ import time
 from sklearn.metrics import accuracy_score
 import json
 from torch.utils.data import TensorDataset, DataLoader, DistributedSampler
+import torch.distributed.checkpoint as dcp
+import csv
+from torch.distributed.fsdp import fully_shard
+import pandas as pd
 
 # GPU TORCH PROFILER
 torch.cuda.memory._record_memory_history(max_entries=100000, stacks='all')
@@ -41,6 +45,13 @@ import pynvml
 all_images = []
 all_labels = []
 new_data_available = False
+
+request_sizes = [100, 200, 500, 1000, 2000, 5000, 10000]
+batch_sizes = [16, 32, 64, 128, 256, 512]
+
+results = []
+training_times = []
+avg_epoch_duration = []
 
 class RPCIterableDataset(IterableDataset):
     def __init__(self, api_host, api_port, world_size, rank, request_size=10000):
@@ -100,35 +111,58 @@ class RPCIterableDataset(IterableDataset):
                 break
             yield item
 
+CHECKPOINT_DIR = "/workspace/checkpoints"
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to the JSON configuration file')
     args = ember.set_ambient(parser.parse_args().config)
     os.environ['MASTER_ADDR'] = 'grworker1'
     os.environ['MASTER_PORT'] = '8888'
-    start = datetime.now()
 
-    mp.spawn(train, nprocs=args.gpus, args=(args,))
+    for i in range(len(request_sizes)):
+        for j in range(len(batch_sizes)):
+            args.request_size = request_sizes[i]
+            args.batch_size = batch_sizes[j]
+            start = datetime.now()
+            mp.spawn(train, nprocs=args.gpus, args=(args, request_sizes[i], batch_sizes[j]))
+            elapsed = (datetime.now() - start).total_seconds()
+            print("Training complete in: " + str(datetime.now() - start))
+            training_times.append(elapsed)
 
-    print("Training complete in: " + str(datetime.now() - start))
+            results.append({
+                'request_size': request_sizes[i],
+                'batch_size': batch_sizes[j],
+                'training_time': elapsed
+            })
 
+    df = pd.DataFrame(results)
+    df.to_csv('training_times.csv', index=False)
 
-def train(gpu, args):
+def train(gpu, args, request_size, batch_size):
     rank = args.nr * args.gpus + gpu
     dist.init_process_group(backend='nccl', init_method='env://',
                             world_size=args.world_size, rank=rank)
     torch.cuda.set_device(gpu)
 
-    model = modelFile.getModel().cuda(gpu)
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
+    model = modelFile.getModel().to(gpu)
+    #model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu])
+    model = fully_shard(model)
     criterion = nn.CrossEntropyLoss().cuda(gpu)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+
+    #checkpoint loading
+    if args.checkpoint_load and os.path.isdir(CHECKPOINT_DIR):
+        state_dict = { "app": model_wrapper.AppState(model, optimizer)}
+        dcp.load(
+            state_dict=state_dict,
+            checkpoint_id=CHECKPOINT_DIR,
+        )
 
     # Streaming dataset and loader
     api_host = "grserver"  
     api_port = 8040
-    request_size = args.request_size
-    train_batch = args.batch_size
+    train_batch = batch_size
     print(f"REQUEST SIZE: {request_size}")
     dataset = RPCIterableDataset(api_host=api_host, 
                                  api_port=api_port, 
@@ -147,7 +181,7 @@ def train(gpu, args):
         total = 0
         batch_count = 0
 
-    
+        dataset.set_epoch(epoch)
         for images, labels in tqdm(loader, desc=f"Epoch {epoch+1}/{args.epochs}"):
             images = images.cuda(gpu, non_blocking=True)
             labels = labels.cuda(gpu, non_blocking=True)
@@ -164,80 +198,14 @@ def train(gpu, args):
             correct += preds.eq(labels).sum().item()
             total += labels.size(0)
             batch_count += 1
+
+        if args.checkpoint_save:
+            state_dict = { "app": model_wrapper.AppState(model, optimizer) }
+            dcp.save(state_dict, checkpoint_id=CHECKPOINT_DIR)
     torch.cuda.memory._dump_snapshot(f"/workspace/profile_{args.nr}.pkl")
     torch.cuda.memory._record_memory_history(enabled=None)
-    if gpu == 0:
-        print("Training complete")
-    if rank == 0:
-        print("Teste gpu 0")
-        test_loader = ember.fetch_test_loader(api_host="grserver", api_port="8040")
-        model.eval()
-        
-        all_labels = []
-        all_predictions = []
-        total_loss = 0
-        total_samples = 0
-
-        total_top1_correct = 0
-        total_top5_correct = 0
-
-        
-        with torch.no_grad():
-            correct = 0
-            total = 0
-            for images, labels in test_loader:
-                images = images.cuda(non_blocking=True)
-                labels = labels.cuda(non_blocking=True)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-                total_loss += loss.item() * labels.size(0)
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-                
-                            # Top-1 and Top-5 accuracy
-                total_top1_correct += (outputs.argmax(dim=1) == labels).sum().item()
-                total_top5_correct += (outputs.topk(5, dim=1).indices == labels.view(-1, 1)).sum().item()
-
-                all_labels.extend(labels.cpu().numpy())
-                all_predictions.extend(predicted.cpu().numpy())
-        
-        accuracy = 100 * correct / total
-        average_loss = total_loss / total
-        precision = precision_score(all_labels, all_predictions, average='weighted')
-        f1 = f1_score(all_labels, all_predictions, average='weighted')
-        top1_accuracy = 100 * total_top1_correct / total
-        top5_accuracy = 100 * total_top5_correct / total
-        top5_error = 100 - top5_accuracy
-        top1_error = 100 - top1_accuracy
-
-        filename = "metrics_async.txt"
-        with open(filename, "w") as file:
-            print('Test Accuracy of the model on the test images: {} %'.format(accuracy))
-            file.write('Test Accuracy of the model on the test images: {} %\n'.format(accuracy))
-            
-            print('Test Loss: {:.4f}'.format(average_loss))
-            file.write('Test Loss: {:.4f}\n'.format(average_loss))
-            
-            print('Test Precision: {:.4f}'.format(precision))
-            file.write('Test Precision: {:.4f}\n'.format(precision))
-            
-            print('Test F1 Score: {:.4f}'.format(f1))
-            file.write('Test F1 Score: {:.4f}\n'.format(f1))
-            
-            print('Test Top-1 Accuracy: {:.4f} %'.format(top1_accuracy))
-            file.write('Test Top-1 Accuracy: {:.4f} %\n'.format(top1_accuracy))
-            
-            print('Test Top-5 Accuracy: {:.4f} %'.format(top5_accuracy))
-            file.write('Test Top-5 Accuracy: {:.4f} %\n'.format(top5_accuracy))
-            
-            print('Test Top-5 Error: {:.4f} %'.format(top5_error))
-            file.write('Test Top-5 Error: {:.4f} %\n'.format(top5_error))
-            
-            print('Test Top-1 Error: {:.4f} %'.format(top1_error))
-            file.write('Test Top-1 Error: {:.4f} %\n'.format(top1_error))
     dist.destroy_process_group()
-    
+
 
 if __name__ == '__main__':
     main()

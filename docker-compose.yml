@@ -3,6 +3,7 @@ services:
   grworker1:
     build: ./worker
     container_name: grworker1
+    gpus: "all"
     environment:
       - RANK=0
       - WORLD_SIZE=2
@@ -16,17 +17,11 @@ services:
     shm_size: '8gb'
     networks:
       - mynetwork
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   grworker2:
     build: ./worker
     container_name: grworker2
+    gpus: "all"
     environment:
       - RANK=1
       - WORLD_SIZE=2
@@ -40,20 +35,13 @@ services:
     shm_size: '8gb'
     networks:
       - mynetwork
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   grserver:
     build: ./server
-    environment:
-      - NODES = 2
-      - BATCH_SIZE = 64
-      - NUM_CLASSES = 10
+    #environment:
+    #  - NODES = 2
+    #  - BATCH_SIZE = 64
+    #  - NUM_CLASSES = 10
     container_name: grserver
     volumes:
       - /home/patrick.araujo/datasets:/workspace/datasets

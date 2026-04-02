@@ -16,5 +16,7 @@
     "dataset_path": {
         "train": "/workspace/datasets/vegetable/train",
         "test": "/workspace/datasets/vegetable/test"
-    }
+    },
+    "validation": false,
+    "data_type": "image"
   }

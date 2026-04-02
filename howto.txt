@@ -119,6 +119,7 @@ docker image prune -f
 
 
 
+
 docker cp grworker1:/workspace/files/gpu_utilization.csv /home/paraujo
 docker cp grworker1:/workspace/files/metrics_sync.txt /home/paraujo
 docker cp grworker1:/workspace/files/sync_metrics.json /home/paraujo
@@ -156,3 +157,7 @@ sudo docker compose up -d --shm-size=8g
 ITERABLE TESTS
 sudo docker cp grworker2:/workspace/files/ember_runs /home/patrick.araujo/
 scp -r patrick.araujo@200.131.223.221:/home/patrick.araujo/ember_runs /home/ubuntrick/Codedepot/Iterable_Results
+
+
+sudo docker cp grworker1:/workspace/files/memory_profile_rank0.csv /home/patrick.araujo
+scp -r patrick.araujo@200.131.223.221:/home/patrick.araujo/memory_profile_rank0.csv /home/ubuntrick/Codedepot/mem_results

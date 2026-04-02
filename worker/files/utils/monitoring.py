@@ -27,3 +27,54 @@ def compute_weight_stats(model):
         max_w = max(max_w, w.max().item())
     total_norm = total_norm ** 0.5
     return total_norm, min_w, max_w
+
+
+def bytes_to_gib(x_bytes):
+    return float(x_bytes) / (1024 ** 3)  # GiB
+
+def log_gpu_metrics(writer, epoch, device=None, reset_peak=False):
+    if device is None:
+        device = torch.cuda.current_device()
+
+    torch.cuda.synchronize(device)
+
+    if reset_peak:
+        torch.cuda.reset_peak_memory_stats(device)
+
+    mem_alloc = torch.cuda.memory_allocated(device)
+    mem_res = torch.cuda.memory_reserved(device)
+    peak_alloc = torch.cuda.max_memory_allocated(device) 
+    peak_res = torch.cuda.max_memory_reserved(device) 
+    mem_free, mem_total = torch.cuda.mem_get_info(device)
+
+    # gb
+    alloc_gib = bytes_to_gib(mem_alloc)
+    res_gib = bytes_to_gib(mem_res)
+    peak_alloc_gib = bytes_to_gib(peak_alloc)
+    peak_res_gib = bytes_to_gib(peak_res)
+    free_gib = bytes_to_gib(mem_free)
+    total_gib = bytes_to_gib(mem_total)
+
+    pct_used = (alloc_gib / total_gib * 100.0) if total_gib > 0 else 0.0
+
+    writer.add_scalar("GPU/MemoryAllocated_GiB", alloc_gib, epoch)
+    writer.add_scalar("GPU/MemoryReserved_GiB", res_gib, epoch)
+    writer.add_scalar("GPU/PeakMemoryAllocated_GiB", peak_alloc_gib, epoch)
+    writer.add_scalar("GPU/PeakMemoryReserved_GiB", peak_res_gib, epoch)
+    writer.add_scalar("GPU/MemoryFree_GiB", free_gib, epoch)
+    writer.add_scalar("GPU/MemoryTotal_GiB", total_gib, epoch)
+    writer.add_scalar("GPU/AllocatedPct", pct_used, epoch)
+
+    try:
+        summary = torch.cuda.memory_summary(device=device, abbreviated=True)
+        writer.add_text(f"GPU{device}/MemorySummary", summary, epoch)
+    except Exception as e:
+        writer.add_text(f"GPU{device}/MemorySummary_Error", str(e), epoch)
+
+    try:
+        max_alloc = torch.cuda.max_memory_allocated(device)
+        max_res = torch.cuda.max_memory_reserved(device)
+        writer.add_scalar(f"GPU{device}/MaxMemoryAllocated_GiB", bytes_to_gib(max_alloc), epoch)
+        writer.add_scalar(f"GPU{device}/MaxMemoryReserved_GiB", bytes_to_gib(max_res), epoch)
+    except Exception as e:
+        writer.add_text(f"GPU{device}/MaxMemory_Error", str(e), epoch)
