@@ -45,7 +45,7 @@ All additional dependencies will be installed on the steps bellow.
 ## Utilization and minimun test
 Navigate to root project folder and create the containers utilizing ``` docker compose up -d ```. Note that the -d flag is important to keep the containers running in detached mode, to be able to open different terminals to each worker and run separate commands in each one.
 
-With the containers created
+With the containers created, it is possible to connect to their terminal using:
 
  ``` docker exec -it {container_name} /bin/bash```
 
@@ -56,6 +56,27 @@ With the containers created, open a terminal for each worker node and one for th
  docker exec -it grworker2 /bin/bash
  docker exec -it grserver /bin/bash
  ```
+
+### Running server with minimun test
+
+Inside the server container, run:
+ ``` 
+python server.py --config ./config/grayscale.json
+ ```
+
+Inside worker node 1 run:
+
+ ``` 
+python ember_iterable.py --config ./config/config1.json
+ ```
+
+ And on worker node 2 run:
+
+  ``` 
+python ember_iterable.py --config ./config/config1.json
+ ```
+
+ This minimum setup will run a distributed training loop, streaming the dataset to each node granting low memory usage over the process and a example of the results obtained when the training is done.
 
 ## Launching the Server proccess
 Ember utilizes a JSON config file system on client and server to streamline the process of configuring the dataloader, the file consists of:
