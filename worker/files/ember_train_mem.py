@@ -75,7 +75,6 @@ def train(gpu, args):
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[gpu],output_device=gpu, static_graph=True)
 
-    # Data loading code
     print("--------- TRAINING STATUS --------")
     print("World Size: ", args.world_size)
     print("Number of GPU's: ", args.gpus)
@@ -96,12 +95,11 @@ def train(gpu, args):
     print("----------------------------------\n")
 
 
-    mem_interval = getattr(args, 'mem_monitor_interval', 1.0)  # segundos entre amostras contínuas
+    mem_interval = getattr(args, 'mem_monitor_interval', 1.0)
     mem_csv_path = getattr(args, 'mem_csv_path', f"nostream_profile_rank{rank}.csv")
-    mem_samples = []   # lista de dicionários {timestamp, type, epoch, batch_idx, rss_bytes, ...}
+    mem_samples = []  
     stop_monitor = threading.Event()
 
-    # monitor thread: amostras periódicas independentes do batch
     def monitor_loop():
         while not stop_monitor.is_set():
             ts = time.time()
@@ -117,7 +115,6 @@ def train(gpu, args):
                 'rank': rank,
                 'pid': os.getpid()
             })
-            # aguarda com timeout para permitir término rápido
             stop_monitor.wait(mem_interval)
 
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
@@ -150,11 +147,9 @@ def train(gpu, args):
             images = images.cuda(non_blocking=True)
             labels = labels.cuda(non_blocking=True)
 
-            # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
 
-            # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -182,7 +177,6 @@ def train(gpu, args):
     stop_monitor.set()
     monitor_thread.join(timeout=5.0)
 
-    # escrever csv (ordenando por timestamp)
     mem_samples.sort(key=lambda x: x['timestamp'])
     csv_fields = ['timestamp', 'iso_time', 'rank', 'pid', 'type', 'epoch', 'batch_idx',
                   'rss_bytes', 'rss_mb', 'vm_total', 'vm_total_gb', 'vm_percent']
